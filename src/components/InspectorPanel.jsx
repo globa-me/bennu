@@ -1,10 +1,9 @@
 import { Copy, Eye, EyeOff, ImagePlus, Link2, Palette, Trash2, Type } from "lucide-react";
 import { Field } from "./Field.jsx";
-import { readFileAsDataUrl } from "../lib/htmlSession.js";
 
 const imageTags = new Set(["img", "video"]);
 
-export function InspectorPanel({ selectedElement, updateSelected }) {
+export function InspectorPanel({ selectedElement, updateSelected, onAssetUpload }) {
   if (!selectedElement) {
     return (
       <div className="empty-panel">
@@ -22,9 +21,14 @@ export function InspectorPanel({ selectedElement, updateSelected }) {
   const handleImageUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    updateSelected("set-attr", { name: "src", value: dataUrl });
-    event.target.value = "";
+    try {
+      const url = await onAssetUpload(file);
+      updateSelected("set-attr", { name: "src", value: url });
+    } catch (err) {
+      console.error("Asset upload failed:", err);
+    } finally {
+      event.target.value = "";
+    }
   };
 
   return (
