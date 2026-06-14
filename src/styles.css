@@ -641,3 +641,38 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+.pages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.page-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #dce5e2;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #26342f;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.page-item:hover {
+  border-color: #8bb9b2;
+  background: #f1f7f6;
+}
+
+.page-item.active {
+  border-color: #0f766e;
+  background: #e6f2f0;
+  color: #0f766e;
+}
