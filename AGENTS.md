@@ -13,7 +13,7 @@ Production is Cloudflare Pages:
 - Deploy mode: Direct Upload with Wrangler, not Git integration
 - Config: `wrangler.jsonc`
 
-Important note: this local folder is not a git repository at the time of this handoff. Do not assume `git diff`, commits, branches, or remotes are available.
+Local git metadata is present on branch `main`. Check `git status` before editing because other agents may have uncommitted work.
 
 ## Commands
 
@@ -110,6 +110,7 @@ Tests:
   - CSS `url(...)` rewriting.
   - CSS `@import` inlining/rewrite behavior.
   - Restore from `blob:` URLs back to HTML-relative paths.
+  - Initial React app shell render smoke test.
 
 ## Last Known Verification
 
@@ -195,4 +196,3 @@ Keep the architecture simple for now:
 - Do not start full source mapping yet.
 - Prefer making the visual editor reliable before copying more Phoenix-like internals.
 - Avoid adding backend requirements unless package export or AI features genuinely need them.
-

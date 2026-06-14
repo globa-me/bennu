@@ -140,6 +140,36 @@ export function App() {
 
   useEffect(() => () => siteSessionRef.current?.cleanup?.(), []);
 
+  const handleExportHtml = useCallback(async (html = documentHtml) => {
+    const session = siteSessionRef.current;
+    try {
+      if (session) {
+        setStatus("Exporting site package...");
+        const formattedHtml = await formatHtml(html);
+        session.updateFile(session.htmlPath, formattedHtml);
+
+        const zipBlob = await session.exportZip();
+        const zipName = `${session.label || "site"}.zip`;
+        const url = URL.createObjectURL(zipBlob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = zipName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+
+        setStatus(`Downloaded site package: ${zipName}`);
+      } else {
+        await downloadHtml(html, fileName);
+        setStatus("Downloaded formatted HTML");
+      }
+    } catch (error) {
+      console.error(error);
+      setStatus("Could not export package");
+    }
+  }, [documentHtml, fileName]);
+
   const handleMessage = useCallback((event) => {
     const message = event.data || {};
     if (event.source !== iframeRef.current?.contentWindow) return;
@@ -293,36 +323,6 @@ export function App() {
     );
     return relativePath;
   }, []);
-
-  const handleExportHtml = useCallback(async (html = documentHtml) => {
-    const session = siteSessionRef.current;
-    try {
-      if (session) {
-        setStatus("Exporting site package...");
-        const formattedHtml = await formatHtml(html);
-        session.updateFile(session.htmlPath, formattedHtml);
-
-        const zipBlob = await session.exportZip();
-        const zipName = `${session.label || "site"}.zip`;
-        const url = URL.createObjectURL(zipBlob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = zipName;
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        URL.revokeObjectURL(url);
-
-        setStatus(`Downloaded site package: ${zipName}`);
-      } else {
-        await downloadHtml(html, fileName);
-        setStatus("Downloaded formatted HTML");
-      }
-    } catch (error) {
-      console.error(error);
-      setStatus("Could not export package");
-    }
-  }, [documentHtml, fileName]);
 
   const handleResetPreview = () => {
     reloadRuntimeHtml(htmlRef.current);
