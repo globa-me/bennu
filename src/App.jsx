@@ -1,3 +1,5 @@
+// Antigravity: Refactored to extract core state managers into custom hooks,
+// add device viewport simulation, and support a safe no-script mode toggle.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Download,
@@ -11,32 +13,25 @@ import {
   RefreshCw,
   Save,
   Undo2,
+  Monitor,
+  Tablet,
+  Smartphone,
+  Shield,
+  ShieldAlert,
 } from "lucide-react";
 import { InspectorPanel } from "./components/InspectorPanel.jsx";
 import { PreviewFrame } from "./components/PreviewFrame.jsx";
 import { sampleDocument } from "./lib/sampleDocument.js";
 import {
-  downloadHtml,
-  extractTitle,
-  formatHtml,
   injectEditorRuntime,
-  readFileAsText,
+  extractTitle,
 } from "./lib/htmlSession.js";
-import {
-  createSiteSessionFromDirectory,
-  createSiteSessionFromZip,
-  isZipFile,
-} from "./lib/sitePackage.js";
-import bennuMark from "./assets/bennu-mark.svg";
 
-const HISTORY_LIMIT = 40;
-// srcdoc iframes without allow-same-origin have an opaque origin, so targetOrigin
-// must remain "*"; the session token plus contentWindow check is the trust boundary.
-const PREVIEW_TARGET_ORIGIN = "*";
-
-function makeHistoryEntry(html) {
-  return { html, title: extractTitle(html), at: Date.now() };
-}
+// Antigravity: Import custom hooks
+import { useHistory } from "./hooks/useHistory.js";
+import { useExportHtml } from "./hooks/useExportHtml.js";
+import { useSiteLoader } from "./hooks/useSiteLoader.js";
+import { usePreviewSession } from "./hooks/usePreviewSession.js";
 
 function createPreviewToken() {
   return window.crypto?.randomUUID?.() || `bennu-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -45,13 +40,15 @@ function createPreviewToken() {
 export function App() {
   const iframeRef = useRef(null);
   const htmlRef = useRef(sampleDocument);
-  const lastHistoryRef = useRef("");
-  const historyTimerRef = useRef(null);
   const siteSessionRef = useRef(null);
   const previewTokenRef = useRef(createPreviewToken());
-  const historyIndexRef = useRef(0);
+
+  // Antigravity: UI Simulator & Script mode state
+  const [viewportWidth, setViewportWidth] = useState("100%");
+  const [disableUserScripts, setDisableUserScripts] = useState(true);
+
   const [documentHtml, setDocumentHtml] = useState(sampleDocument);
-  const [runtimeHtml, setRuntimeHtml] = useState(() => injectEditorRuntime(sampleDocument, previewTokenRef.current));
+  const [runtimeHtml, setRuntimeHtml] = useState(() => injectEditorRuntime(sampleDocument, previewTokenRef.current, true));
   const [runtimeKey, setRuntimeKey] = useState(0);
   const [fileName, setFileName] = useState("bennu-demo.html");
   const [packageInfo, setPackageInfo] = useState(null);
@@ -60,62 +57,65 @@ export function App() {
   const [selectedElement, setSelectedElement] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
-  const [history, setHistory] = useState([makeHistoryEntry(sampleDocument)]);
-  const [historyIndex, setHistoryIndex] = useState(0);
 
   const title = useMemo(() => extractTitle(documentHtml), [documentHtml]);
+
+  // Antigravity: Integrate useHistory hook
+  const {
+    history,
+    historyIndex,
+    pushHistory,
+    handleUndo,
+    handleRedo,
+    resetHistory,
+    canUndo,
+    canRedo,
+  } = useHistory(sampleDocument);
+
+  // Antigravity: Integrate useExportHtml hook
+  const { handleExportHtml } = useExportHtml(
+    siteSessionRef,
+    documentHtml,
+    fileName,
+    setStatus
+  );
+
+  // Antigravity: Integrate usePreviewSession hook
+  const {
+    updateSelected,
+    normalizeElement,
+  } = usePreviewSession({
+    iframeRef,
+    previewTokenRef,
+    siteSessionRef,
+    selectedElement,
+    setSelectedElement,
+    setDocumentHtml,
+    pushHistory,
+    handleExportHtml,
+    disableUserScripts,
+    setStatus,
+    htmlRef,
+  });
 
   const makeRuntimeHtml = useCallback((html) => {
     const session = siteSessionRef.current;
     const previewHtml = session ? session.render(html) : html;
-    return injectEditorRuntime(previewHtml, previewTokenRef.current);
-  }, []);
+    // Antigravity: Pass disableUserScripts flag down to iframe runtime injection
+    return injectEditorRuntime(previewHtml, previewTokenRef.current, disableUserScripts);
+  }, [disableUserScripts]);
 
   const reloadRuntimeHtml = useCallback((html) => {
     setRuntimeHtml(makeRuntimeHtml(html));
     setRuntimeKey((key) => key + 1);
   }, [makeRuntimeHtml]);
 
-  const restoreFromPreview = useCallback((html) => {
-    const session = siteSessionRef.current;
-    return session ? session.restore(html) : html;
-  }, []);
-
-  const normalizeElement = useCallback((element) => {
-    const session = siteSessionRef.current;
-    if (!session || !element) return element;
-    return {
-      ...element,
-      src: element.src ? session.restore(element.src) : element.src,
-      href: element.href ? session.restore(element.href) : element.href,
-    };
-  }, []);
-
-  const pushHistory = useCallback((html, immediate = false) => {
-    window.clearTimeout(historyTimerRef.current);
-    const commit = () => {
-      if (!html || html === lastHistoryRef.current) return;
-      lastHistoryRef.current = html;
-      setHistory((current) => {
-        const nextBase = current.slice(0, historyIndexRef.current + 1);
-        const next = [...nextBase, makeHistoryEntry(html)].slice(-HISTORY_LIMIT);
-        const nextIndex = next.length - 1;
-        historyIndexRef.current = nextIndex;
-        setHistoryIndex(nextIndex);
-        return next;
-      });
-    };
-
-    if (immediate) commit();
-    else historyTimerRef.current = window.setTimeout(commit, 700);
-  }, []);
-
+  // Antigravity: Setup loadDocument callback first
   const loadDocument = useCallback((html, nextFileName = "document.html", siteSession = null) => {
     siteSessionRef.current?.cleanup?.();
     siteSessionRef.current = siteSession;
     previewTokenRef.current = createPreviewToken();
     htmlRef.current = html;
-    lastHistoryRef.current = html;
     setDocumentHtml(html);
     reloadRuntimeHtml(html);
     setFileName(nextFileName);
@@ -132,135 +132,43 @@ export function App() {
     setPages(siteSession ? siteSession.getHtmlPaths() : []);
     setSelectedElement(null);
     setStatus(siteSession ? `Loaded site package: ${siteSession.assetCount} assets` : `Loaded ${nextFileName}`);
-    const entry = makeHistoryEntry(html);
-    setHistory([entry]);
-    historyIndexRef.current = 0;
-    setHistoryIndex(0);
-  }, [reloadRuntimeHtml]);
+    resetHistory(html);
+  }, [reloadRuntimeHtml, resetHistory]);
+
+  // Antigravity: Integrate useSiteLoader hook
+  const { handleOpenFile, handleOpenDirectory } = useSiteLoader(loadDocument, setStatus);
 
   useEffect(() => () => siteSessionRef.current?.cleanup?.(), []);
 
-  const handleExportHtml = useCallback(async (html = documentHtml) => {
-    const session = siteSessionRef.current;
-    try {
-      if (session) {
-        setStatus("Exporting site package...");
-        const formattedHtml = await formatHtml(html);
-        session.updateFile(session.htmlPath, formattedHtml);
-
-        const zipBlob = await session.exportZip();
-        const zipName = `${session.label || "site"}.zip`;
-        const url = URL.createObjectURL(zipBlob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = zipName;
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        URL.revokeObjectURL(url);
-
-        setStatus(`Downloaded site package: ${zipName}`);
-      } else {
-        await downloadHtml(html, fileName);
-        setStatus("Downloaded formatted HTML");
-      }
-    } catch (error) {
-      console.error(error);
-      setStatus("Could not export package");
-    }
-  }, [documentHtml, fileName]);
-
-  const handleMessage = useCallback((event) => {
-    const message = event.data || {};
-    if (event.source !== iframeRef.current?.contentWindow) return;
-    if (message.source !== "bennu-preview" || message.token !== previewTokenRef.current) return;
-
-    const restoredHtml = message.html ? restoreFromPreview(message.html) : "";
-
-    if (message.type === "ready") {
-      setStatus("Preview ready");
-    }
-
-    if (message.type === "select") {
-      if (restoredHtml) {
-        htmlRef.current = restoredHtml;
-        setDocumentHtml(restoredHtml);
-      }
-      const restoredElement = normalizeElement(message.element || null);
-      setSelectedElement(restoredElement);
-      setStatus(message.element ? `Selected <${message.element.tagName}>` : "Nothing selected");
-      if (restoredHtml) pushHistory(restoredHtml);
-    }
-
-    if (message.type === "change") {
-      if (restoredHtml) {
-        htmlRef.current = restoredHtml;
-        setDocumentHtml(restoredHtml);
-      }
-      setSelectedElement(normalizeElement(message.element || null));
-      setStatus("Edited");
-      if (restoredHtml) pushHistory(restoredHtml);
-    }
-
-    if (message.type === "save-request") {
-      void handleExportHtml(restoredHtml || htmlRef.current);
-    }
-  }, [handleExportHtml, normalizeElement, pushHistory, restoreFromPreview]);
-
+  // Antigravity: Reload iframe whenever the script mode is toggled
   useEffect(() => {
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, [handleMessage]);
+    reloadRuntimeHtml(htmlRef.current);
+  }, [disableUserScripts, reloadRuntimeHtml]);
 
-  const postToPreview = useCallback((payload) => {
-    iframeRef.current?.contentWindow?.postMessage(
-      { source: "bennu-host", token: previewTokenRef.current, ...payload },
-      PREVIEW_TARGET_ORIGIN,
-    );
-  }, []);
+  const handleResetPreview = () => {
+    reloadRuntimeHtml(htmlRef.current);
+    setStatus("Preview refreshed");
+  };
 
-  const updateSelected = useCallback((action, payload = {}) => {
-    if (!selectedElement?.id) return;
-    const nextPayload = { ...payload };
-    if (
-      action === "set-attr" &&
-      ["src", "href", "poster", "data", "xlink:href"].includes(payload.name) &&
-      payload.value
-    ) {
-      nextPayload.value = siteSessionRef.current?.previewUrlFor(payload.value) || payload.value;
-    }
-    postToPreview({ action, id: selectedElement.id, ...nextPayload });
-  }, [postToPreview, selectedElement?.id]);
-
-  const handleOpenFile = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      if (isZipFile(file)) {
-        const siteSession = await createSiteSessionFromZip(file);
-        loadDocument(siteSession.html, siteSession.htmlPath.split("/").pop() || "index.html", siteSession);
-      } else {
-        const html = await readFileAsText(file);
-        loadDocument(html, file.name);
-        setStatus("Loaded single HTML. Use ZIP or folder if it has relative CSS/images.");
-      }
-    } catch (error) {
-      setStatus(error.message);
-    } finally {
-      event.target.value = "";
+  const triggerUndo = () => {
+    const restored = handleUndo();
+    if (restored !== null) {
+      htmlRef.current = restored;
+      setDocumentHtml(restored);
+      reloadRuntimeHtml(restored);
+      setSelectedElement(null);
+      setStatus("Undo");
     }
   };
 
-  const handleOpenDirectory = async (event) => {
-    const files = event.target.files;
-    if (!files?.length) return;
-    try {
-      const siteSession = await createSiteSessionFromDirectory(files);
-      loadDocument(siteSession.html, siteSession.htmlPath.split("/").pop() || "index.html", siteSession);
-    } catch (error) {
-      setStatus(error.message);
-    } finally {
-      event.target.value = "";
+  const triggerRedo = () => {
+    const restored = handleRedo();
+    if (restored !== null) {
+      htmlRef.current = restored;
+      setDocumentHtml(restored);
+      reloadRuntimeHtml(restored);
+      setSelectedElement(null);
+      setStatus("Redo");
     }
   };
 
@@ -278,7 +186,6 @@ export function App() {
     const newHtml = await session.getFileText(newHtmlPath);
 
     htmlRef.current = newHtml;
-    lastHistoryRef.current = newHtml;
     setDocumentHtml(newHtml);
     reloadRuntimeHtml(newHtml);
     setFileName(newHtmlPath.split("/").pop() || "index.html");
@@ -293,17 +200,13 @@ export function App() {
     );
     setSelectedElement(null);
     setStatus(`Switched to page: ${newHtmlPath.split("/").pop()}`);
-
-    const entry = makeHistoryEntry(newHtml);
-    setHistory([entry]);
-    historyIndexRef.current = 0;
-    setHistoryIndex(0);
-  }, [documentHtml, reloadRuntimeHtml]);
+    resetHistory(newHtml);
+  }, [documentHtml, reloadRuntimeHtml, resetHistory]);
 
   const handleAssetUpload = useCallback(async (file) => {
     const session = siteSessionRef.current;
     if (!session) {
-      // Single HTML file mode: fallback to data URL
+      // Single HTML file mode fallback (should not happen now with virtual session, but kept for safety)
       const reader = new FileReader();
       return new Promise((resolve, reject) => {
         reader.onload = () => resolve(String(reader.result || ""));
@@ -323,37 +226,6 @@ export function App() {
     );
     return relativePath;
   }, []);
-
-  const handleResetPreview = () => {
-    reloadRuntimeHtml(htmlRef.current);
-    setStatus("Preview refreshed");
-  };
-
-  const handleUndo = () => {
-    const nextIndex = Math.max(0, historyIndex - 1);
-    const entry = history[nextIndex];
-    if (!entry) return;
-    historyIndexRef.current = nextIndex;
-    setHistoryIndex(nextIndex);
-    htmlRef.current = entry.html;
-    setDocumentHtml(entry.html);
-    reloadRuntimeHtml(entry.html);
-    setSelectedElement(null);
-    setStatus("Undo");
-  };
-
-  const handleRedo = () => {
-    const nextIndex = Math.min(history.length - 1, historyIndex + 1);
-    const entry = history[nextIndex];
-    if (!entry) return;
-    historyIndexRef.current = nextIndex;
-    setHistoryIndex(nextIndex);
-    htmlRef.current = entry.html;
-    setDocumentHtml(entry.html);
-    reloadRuntimeHtml(entry.html);
-    setSelectedElement(null);
-    setStatus("Redo");
-  };
 
   const shellClassName = [
     "app-shell",
@@ -460,14 +332,40 @@ export function App() {
             >
               {isSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
             </button>
-            <button type="button" className="icon-button" onClick={handleUndo} disabled={historyIndex === 0} title="Undo">
+            <button type="button" className="icon-button" onClick={triggerUndo} disabled={!canUndo} title="Undo">
               <Undo2 size={18} />
             </button>
-            <button type="button" className="icon-button" onClick={handleRedo} disabled={historyIndex >= history.length - 1} title="Redo">
+            <button type="button" className="icon-button" onClick={triggerRedo} disabled={!canRedo} title="Redo">
               <Undo2 size={18} className="flip-x" />
             </button>
             <button type="button" className="icon-button" onClick={handleResetPreview} title="Refresh editable preview">
               <RefreshCw size={18} />
+            </button>
+
+            {/* Antigravity: Viewport simulator controls */}
+            <button
+              type="button"
+              className={`icon-button ${viewportWidth === "100%" ? "active" : ""}`}
+              onClick={() => setViewportWidth("100%")}
+              title="Desktop width"
+            >
+              <Monitor size={17} />
+            </button>
+            <button
+              type="button"
+              className={`icon-button ${viewportWidth === "768px" ? "active" : ""}`}
+              onClick={() => setViewportWidth("768px")}
+              title="Tablet width"
+            >
+              <Tablet size={17} />
+            </button>
+            <button
+              type="button"
+              className={`icon-button ${viewportWidth === "375px" ? "active" : ""}`}
+              onClick={() => setViewportWidth("375px")}
+              title="Mobile width"
+            >
+              <Smartphone size={17} />
             </button>
           </div>
 
@@ -477,6 +375,17 @@ export function App() {
           </div>
 
           <div className="toolbar-group">
+            {/* Antigravity: Script execution toggle moved to right toolbar group to avoid overlaps */}
+            <button
+              type="button"
+              className={`text-button ${disableUserScripts ? "active" : ""}`}
+              onClick={() => setDisableUserScripts((prev) => !prev)}
+              title={disableUserScripts ? "Enable user scripts (caution)" : "Disable user scripts (safe)"}
+            >
+              {disableUserScripts ? <Shield size={16} /> : <ShieldAlert size={16} />}
+              {disableUserScripts ? "Safe Mode" : "Scripts Active"}
+            </button>
+
             <button
               type="button"
               className={`text-button ${isInspectorOpen ? "active" : ""}`}
@@ -494,7 +403,13 @@ export function App() {
         </header>
 
         <section className="canvas-stage">
-          <PreviewFrame iframeRef={iframeRef} runtimeHtml={runtimeHtml} runtimeKey={runtimeKey} />
+          {/* Antigravity: Pass viewportWidth down to PreviewFrame */}
+          <PreviewFrame
+            iframeRef={iframeRef}
+            runtimeHtml={runtimeHtml}
+            runtimeKey={runtimeKey}
+            viewportWidth={viewportWidth}
+          />
         </section>
       </main>
 
@@ -526,3 +441,6 @@ export function App() {
     </div>
   );
 }
+
+// Antigravity: Import logo asset correctly at bottom/top scope
+import bennuMark from "./assets/bennu-mark.svg";

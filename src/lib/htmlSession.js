@@ -3,7 +3,7 @@ const SELECTED_ATTR = "data-bennu-selected";
 const EDITABLE_ATTR = "data-bennu-editable";
 const HOVERED_ATTR = "data-bennu-hovered";
 
-export function injectEditorRuntime(html, sessionToken = "") {
+export function injectEditorRuntime(html, sessionToken = "", disableUserScripts = false) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html || "", "text/html");
 
@@ -21,6 +21,34 @@ export function injectEditorRuntime(html, sessionToken = "") {
     node.removeAttribute("contenteditable");
     node.removeAttribute("spellcheck");
   });
+
+  // Antigravity: Disable user scripts inside the iframe to prevent loops/hijacking if safe mode is enabled
+  if (disableUserScripts) {
+    doc.querySelectorAll("script").forEach((el) => {
+      if (el.id === BENNU_SCRIPT_ID) return;
+      if (el.hasAttribute("type")) {
+        el.setAttribute("data-bennu-orig-type", el.getAttribute("type"));
+      }
+      el.setAttribute("type", "text/bennu-disabled");
+    });
+
+    // Disable inline on* event handlers (e.g. onclick, onload)
+    const allElements = doc.getElementsByTagName("*");
+    for (let i = 0; i < allElements.length; i++) {
+      const el = allElements[i];
+      const attrsToRemove = [];
+      const attrsToAdd = [];
+      for (let j = 0; j < el.attributes.length; j++) {
+        const attr = el.attributes[j];
+        if (attr.name.startsWith("on")) {
+          attrsToAdd.push({ name: `data-bennu-orig-${attr.name}`, value: attr.value });
+          attrsToRemove.push(attr.name);
+        }
+      }
+      attrsToRemove.forEach((name) => el.removeAttribute(name));
+      attrsToAdd.forEach(({ name, value }) => el.setAttribute(name, value));
+    }
+  }
 
   const style = doc.createElement("style");
   style.setAttribute("data-bennu-runtime", "true");
@@ -299,4 +327,41 @@ export function readFileAsDataUrl(file) {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+// Antigravity: Restore user scripts and inline event handlers back to their original state
+export function restoreUserScripts(html) {
+  if (!html) return html;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+
+  // Restore script tags
+  doc.querySelectorAll('script[type="text/bennu-disabled"]').forEach((el) => {
+    if (el.hasAttribute("data-bennu-orig-type")) {
+      el.setAttribute("type", el.getAttribute("data-bennu-orig-type"));
+      el.removeAttribute("data-bennu-orig-type");
+    } else {
+      el.removeAttribute("type");
+    }
+  });
+
+  // Restore inline event handlers
+  const allElements = doc.getElementsByTagName("*");
+  for (let i = 0; i < allElements.length; i++) {
+    const el = allElements[i];
+    const attrsToRemove = [];
+    const attrsToAdd = [];
+    for (let j = 0; j < el.attributes.length; j++) {
+      const attr = el.attributes[j];
+      if (attr.name.startsWith("data-bennu-orig-on")) {
+        const origName = attr.name.slice("data-bennu-orig-".length);
+        attrsToAdd.push({ name: origName, value: attr.value });
+        attrsToRemove.push(attr.name);
+      }
+    }
+    attrsToRemove.forEach((name) => el.removeAttribute(name));
+    attrsToAdd.forEach(({ name, value }) => el.setAttribute(name, value));
+  }
+
+  return "<!doctype html>\n" + doc.documentElement.outerHTML;
 }

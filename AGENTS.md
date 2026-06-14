@@ -24,10 +24,21 @@ npm install
 npm run dev
 ```
 
-Verify:
+Verify Unit Tests:
 
 ```bash
 npm test
+```
+
+Verify E2E Tests (Playwright):
+
+```bash
+npm run test:e2e
+```
+
+Verify Build:
+
+```bash
 npm run build
 ```
 
@@ -47,10 +58,14 @@ npx wrangler pages deploy dist --project-name bennu
 
 Key files:
 
-- `src/App.jsx`: top-level app state, file loading, preview session, history, export, iframe messaging, layout.
+- `src/App.jsx`: top-level layout, component orchestration, styling, and hook integration.
+- `src/hooks/useHistory.js`: custom hook managing the document's undo/redo history stacks.
+- `src/hooks/useExportHtml.js`: custom hook wrapping Prettier formatting and smart file/ZIP package download exports.
+- `src/hooks/useSiteLoader.js`: custom hook managing folder, ZIP, and virtual single-file loading sessions.
+- `src/hooks/usePreviewSession.js`: custom hook handling iframe `postMessage` boundary communications and script toggle status.
 - `src/lib/htmlSession.js`: HTML runtime injection, iframe editor script, HTML formatting/download helpers.
 - `src/lib/sitePackage.js`: ZIP/folder loading, path normalization, asset URL rewriting to `blob:`, restore from `blob:` URLs to relative paths.
-- `src/components/PreviewFrame.jsx`: sandboxed editable iframe wrapper.
+- `src/components/PreviewFrame.jsx`: sandboxed editable iframe wrapper supporting responsive widths simulator.
 - `src/components/InspectorPanel.jsx`: selected element inspector.
 - `src/lib/sitePackage.test.js`: Vitest coverage for ZIP/folder path resolving and restore behavior.
 - `src/styles.css`: main app styling.
@@ -117,83 +132,47 @@ Codex correction note, 2026-06-14:
 - Previous agent added package ZIP export, asset upload, multi-page routing UI, and related tests, but introduced a startup crash in `src/App.jsx`.
 - The specific mistake was referencing `handleExportHtml` in the `handleMessage` `useCallback` dependency array before `handleExportHtml` was initialized. Vite build and the existing tests passed, but the React app crashed on first browser render with `ReferenceError: Cannot access 'handleExportHtml' before initialization`.
 - Codex fixed this in commit `ecef72a` by moving `handleExportHtml` above `handleMessage`, adding `src/App.test.jsx` to smoke-test the initial React shell render, and updating this handoff file to note that git metadata exists locally.
-- Codex verified `npm test`, `npm run build`, local browser smoke, and production Playwright smoke against `https://bennu.pages.dev/` after deploy. Cloudflare Pages direct-upload deployment preview was `https://45be786f.bennu.pages.dev`.
+- Codex verified `npm test`, `npm run build`, local browser smoke, and production Playwright smoke against `https://bennu.pages.dev/`.
+
+Antigravity refactoring and features note, 2026-06-14:
+
+- Refactored `src/App.jsx` by extracting core state and logic concern blocks into reusable custom React hooks: `useHistory`, `useExportHtml`, `useSiteLoader`, and `usePreviewSession`.
+- Implemented **Safe Script Mode** toggle. If active, user script tags and inline event handlers are neutralized inside the preview iframe to prevent alert loops or redirect hijacks. They are fully restored on HTML export.
+- Implemented **Device Viewport Simulator** (Desktop 100%, Tablet 768px, Mobile 375px) in the top bar with smooth width transitions and card shadows on the preview frame.
+- Implemented **Smart Single-file virtual sessions**. Single HTML files are wrapped in virtual sessions so that any local image replacement stores files relatively instead of using Base64 strings. If no assets were replaced, it downloads raw HTML on save; if assets were added, it bundles them into a ZIP package.
+- Setup **Playwright integration testing** in `e2e/editor.spec.js` and added `npm run test:e2e` to package script. Tests verify loading, selection, editing, duplication, undo, and viewports.
+- Configured Vitest to exclude `e2e` directories to ensure unit tests run clean.
 
 ## Last Known Verification
 
 As of 2026-06-14:
 
 - `npm test` passes.
+- `npm run test:e2e` passes (all 4 specs passing).
 - `npm run build` passes.
 - `https://bennu.pages.dev/` returns `HTTP 200` through Cloudflare.
-- Cloudflare Pages has recent production deployment `1b27a1e4-a5b7-4fe6-ad28-a1628eb7352f`.
-
-Manual/Playwright QA previously verified:
-
-- App loads with title `Bennu`.
-- No console warnings/errors during main flow.
-- Hover marks a preview element.
-- Click selects `<h1>`.
-- Inspector can update `id`, `title`, and `font-size`.
-- Duplicate creates a second `<h1>`.
-- Undo returns to one `<h1>`.
-- Redo returns to two `<h1>`.
-- Save downloads formatted `bennu-demo.html`.
 
 ## Known Limitations
 
-- Package-wide ZIP export is not implemented. Opening ZIP/folder works, but saving exports only the edited HTML document.
-- Replacing an image currently writes a `data:` URL into HTML. Future package export should store new assets as files and rewrite `src`.
-- User HTML scripts can still execute inside the sandboxed iframe. The sandbox is stricter now, but there is no user-facing scripts on/off toggle yet.
 - Browser plugin cannot directly interact with the opaque sandboxed iframe after removing `allow-same-origin`; use local Playwright for iframe interaction QA.
 - Source mapping is intentionally not implemented. Bennu does not preserve original formatting, whitespace, or attribute ordering after export.
-- `App.jsx` is large and handles too many concerns.
-- There are no e2e tests committed yet.
-- There is no git repository metadata in this folder.
 
 ## Recommended Next Work
 
-Priority 1: Add e2e tests for the real editor workflow.
+Priority 1: Add parent/child selection controls and breadcrumbs.
 
-- Use Playwright.
-- Cover load demo, hover, select, inspector edit, duplicate, undo, redo, export.
-- Add a script such as `npm run test:e2e`.
+- Show breadcrumbs for the selected element's DOM path (e.g. `div > main > section > h1`).
+- Allow selecting parent elements directly from breadcrumbs or parent selector button to ease layout editing.
 
-Priority 2: Refactor `App.jsx` into hooks.
-
-Suggested hooks:
-
-- `usePreviewSession`
-- `useHistory`
-- `useSiteLoader`
-- `useExportHtml`
-
-Priority 3: Implement package-wide ZIP export.
-
-Recommended shape:
-
-- Keep original files map in `siteSession`.
-- Track edited HTML separately.
-- Track added/replaced assets separately.
-- Export ZIP with edited HTML at `htmlPath` and original plus new assets.
-
-Priority 4: Improve asset replacement.
-
-- Avoid embedding large images as `data:` URLs when a site package is loaded.
-- Add generated asset names under an asset folder.
-- Update `src` to relative asset paths.
-
-Priority 5: Add preview controls.
-
-- Responsive widths: Desktop, Tablet, Mobile, Custom.
-- Script execution toggle: safer no-script mode vs full preview mode.
-- Parent/child selection controls and breadcrumbs.
-
-Priority 6: Add production smoke checks.
+Priority 2: Add production smoke checks.
 
 - Verify `https://bennu.pages.dev/` title.
 - Verify referenced JS/CSS assets return 200.
 - Optionally run a lightweight headless interaction smoke.
+
+Priority 3: Extend E2E test coverage.
+
+- Add playwright coverage for folder loading, multi-page page switching, and asset upload/ZIP packaging flows.
 
 ## Design Direction
 

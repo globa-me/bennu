@@ -213,12 +213,13 @@ button {
 .workspace {
   display: grid;
   grid-template-rows: 58px minmax(0, 1fr);
+  container-type: inline-size;
   min-width: 0;
 }
 
 .topbar {
   display: grid;
-  grid-template-columns: auto minmax(160px, 1fr) auto;
+  grid-template-columns: auto minmax(80px, 1fr) auto;
   align-items: center;
   gap: 14px;
   min-width: 0;
@@ -227,9 +228,23 @@ button {
   background: #fbfcfc;
 }
 
+/* Antigravity: Align columns correctly and prevent overlay bugs */
+.topbar > .toolbar-group:first-child {
+  justify-self: start;
+}
+
+.topbar > .topbar-title {
+  justify-self: center;
+}
+
+.topbar > .toolbar-group:last-child {
+  justify-self: end;
+}
+
 .toolbar-group {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 7px;
   min-width: 0;
 }
@@ -270,7 +285,8 @@ button {
   font-weight: 800;
 }
 
-.text-button.active {
+.text-button.active,
+.icon-button.active {
   border-color: #8bb9b2;
   background: #e6f2f0;
   color: #0f766e;
@@ -296,6 +312,7 @@ button {
 .topbar-title {
   display: flex;
   min-width: 0;
+  overflow: hidden;
   flex-direction: column;
   align-items: center;
   gap: 2px;
@@ -367,11 +384,22 @@ button {
   font-weight: 700;
 }
 
-.preview-shell iframe {
-  width: 100%;
+/* Antigravity: Added styles for device simulation container and transition-ready iframe */
+.preview-container {
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  background: #f1f5f9;
+  overflow: auto;
+  height: 100%;
+}
+
+.preview-iframe {
   height: 100%;
   border: 0;
   background: #ffffff;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
 .panel-titlebar {
@@ -554,6 +582,26 @@ button {
 
 .mobile-actions {
   display: none;
+}
+
+@container (max-width: 760px) {
+  .topbar {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .topbar-title {
+    display: none;
+  }
+
+  .topbar .text-button,
+  .topbar .primary-button {
+    width: 38px;
+    min-width: 38px;
+    padding: 0;
+    gap: 0;
+    font-size: 0;
+  }
 }
 
 @media (max-width: 1180px) {
