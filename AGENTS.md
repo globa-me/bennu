@@ -112,6 +112,13 @@ Tests:
   - Restore from `blob:` URLs back to HTML-relative paths.
   - Initial React app shell render smoke test.
 
+Codex correction note, 2026-06-14:
+
+- Previous agent added package ZIP export, asset upload, multi-page routing UI, and related tests, but introduced a startup crash in `src/App.jsx`.
+- The specific mistake was referencing `handleExportHtml` in the `handleMessage` `useCallback` dependency array before `handleExportHtml` was initialized. Vite build and the existing tests passed, but the React app crashed on first browser render with `ReferenceError: Cannot access 'handleExportHtml' before initialization`.
+- Codex fixed this in commit `ecef72a` by moving `handleExportHtml` above `handleMessage`, adding `src/App.test.jsx` to smoke-test the initial React shell render, and updating this handoff file to note that git metadata exists locally.
+- Codex verified `npm test`, `npm run build`, local browser smoke, and production Playwright smoke against `https://bennu.pages.dev/` after deploy. Cloudflare Pages direct-upload deployment preview was `https://45be786f.bennu.pages.dev`.
+
 ## Last Known Verification
 
 As of 2026-06-14:
