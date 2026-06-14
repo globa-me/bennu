@@ -216,18 +216,18 @@ export async function createSiteSessionFromDirectory(fileList) {
 export async function createSiteSession(files, label = "site") {
   const paths = Array.from(files.keys());
   const root = commonRoot(paths);
-  const htmlPath = chooseHtmlPath(paths);
+  let htmlPath = chooseHtmlPath(paths);
   const html = await readBlobText(files.get(htmlPath));
   const objectUrls = new Map();
   const blobToOriginal = new Map();
   const cssUrlPromises = new Map();
 
-  const makeObjectUrl = (path, blob, restorePath = relativeFrom(htmlPath, path)) => {
+  const makeObjectUrl = (path, blob) => {
     if (objectUrls.has(path)) return objectUrls.get(path);
     const typedBlob = blob.type ? blob : new Blob([blob], { type: mimeForPath(path) });
     const url = URL.createObjectURL(typedBlob);
     objectUrls.set(path, url);
-    blobToOriginal.set(url, restorePath);
+    blobToOriginal.set(url, path);
     return url;
   };
 
@@ -276,7 +276,7 @@ export async function createSiteSession(files, label = "site") {
       const transformed = await transformCssFile(path);
       const url = URL.createObjectURL(new Blob([transformed], { type: "text/css" }));
       objectUrls.set(path, url);
-      blobToOriginal.set(url, relativeFrom(htmlPath, path));
+      blobToOriginal.set(url, path);
       return url;
     })();
 
@@ -318,8 +318,9 @@ export async function createSiteSession(files, label = "site") {
 
   const restore = (sourceHtml) => {
     let restored = sourceHtml || "";
-    Array.from(blobToOriginal.entries()).forEach(([blobUrl, originalPath]) => {
-      restored = restored.split(blobUrl).join(originalPath);
+    Array.from(blobToOriginal.entries()).forEach(([blobUrl, absolutePath]) => {
+      const relativePath = relativeFrom(htmlPath, absolutePath);
+      restored = restored.split(blobUrl).join(relativePath);
     });
     return restored;
   };
@@ -332,21 +333,68 @@ export async function createSiteSession(files, label = "site") {
     });
   };
 
+  const getHtmlPaths = () => {
+    return Array.from(files.keys()).filter((path) => /\.html?$/i.test(path)).sort();
+  };
+
+  const updateFile = (path, content) => {
+    const blob = new Blob([content], { type: "text/html;charset=utf-8" });
+    files.set(path, blob);
+  };
+
+  const getFileText = async (path) => {
+    const blob = files.get(path);
+    if (!blob) return "";
+    return await blob.text();
+  };
+
+  const switchHtmlPath = (newPath) => {
+    htmlPath = newPath;
+  };
+
+  const addAsset = async (file) => {
+    const folder = dirname(htmlPath) ? `${dirname(htmlPath)}/assets` : "assets";
+    const ext = extname(file.name) || ".png";
+    const name = `uploaded-${Date.now()}-${Math.random().toString(36).slice(2, 7)}${ext}`;
+    const assetPath = `${folder}/${name}`;
+
+    files.set(assetPath, file);
+    const relativePath = relativeFrom(htmlPath, assetPath);
+
+    makeObjectUrl(assetPath, file);
+
+    return relativePath;
+  };
+
+  const exportZip = async () => {
+    const zip = new JSZip();
+    for (const [path, blob] of files.entries()) {
+      zip.file(path, blob);
+    }
+    return await zip.generateAsync({ type: "blob" });
+  };
+
   return {
     html,
-    htmlPath,
+    get htmlPath() { return htmlPath; },
     label,
     root,
-    assetCount: Math.max(0, paths.length - 1),
+    get assetCount() { return Math.max(0, files.size - 1); },
     exportPackage: {
-      mode: "HTML export now; package export later",
-      htmlPath,
-      assetPaths: paths.filter((path) => path !== htmlPath),
+      mode: "Full package export ready",
+      get htmlPath() { return htmlPath; },
+      get assetPaths() { return Array.from(files.keys()).filter((path) => path !== htmlPath); },
     },
     render,
     restore,
     previewUrlFor,
     cleanup,
+    getHtmlPaths,
+    updateFile,
+    getFileText,
+    switchHtmlPath,
+    addAsset,
+    exportZip,
   };
 }
 

@@ -18,6 +18,7 @@ import { sampleDocument } from "./lib/sampleDocument.js";
 import {
   downloadHtml,
   extractTitle,
+  formatHtml,
   injectEditorRuntime,
   readFileAsText,
 } from "./lib/htmlSession.js";
@@ -54,6 +55,7 @@ export function App() {
   const [runtimeKey, setRuntimeKey] = useState(0);
   const [fileName, setFileName] = useState("bennu-demo.html");
   const [packageInfo, setPackageInfo] = useState(null);
+  const [pages, setPages] = useState([]);
   const [status, setStatus] = useState("Ready");
   const [selectedElement, setSelectedElement] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -127,6 +129,7 @@ export function App() {
           }
         : null,
     );
+    setPages(siteSession ? siteSession.getHtmlPaths() : []);
     setSelectedElement(null);
     setStatus(siteSession ? `Loaded site package: ${siteSession.assetCount} assets` : `Loaded ${nextFileName}`);
     const entry = makeHistoryEntry(html);
@@ -170,11 +173,9 @@ export function App() {
     }
 
     if (message.type === "save-request") {
-      void downloadHtml(restoredHtml || htmlRef.current, fileName)
-        .then(() => setStatus("Downloaded formatted HTML"))
-        .catch(() => setStatus("Could not download HTML"));
+      void handleExportHtml(restoredHtml || htmlRef.current);
     }
-  }, [fileName, normalizeElement, pushHistory, restoreFromPreview]);
+  }, [handleExportHtml, normalizeElement, pushHistory, restoreFromPreview]);
 
   useEffect(() => {
     window.addEventListener("message", handleMessage);
@@ -233,12 +234,93 @@ export function App() {
     }
   };
 
+  const switchPage = useCallback(async (newHtmlPath) => {
+    const session = siteSessionRef.current;
+    if (!session || newHtmlPath === session.htmlPath) return;
+
+    // Save current page's HTML to session
+    session.updateFile(session.htmlPath, documentHtml);
+
+    // Switch active HTML path
+    session.switchHtmlPath(newHtmlPath);
+
+    // Load new HTML content
+    const newHtml = await session.getFileText(newHtmlPath);
+
+    htmlRef.current = newHtml;
+    lastHistoryRef.current = newHtml;
+    setDocumentHtml(newHtml);
+    reloadRuntimeHtml(newHtml);
+    setFileName(newHtmlPath.split("/").pop() || "index.html");
+    setPackageInfo((prev) =>
+      prev
+        ? {
+            ...prev,
+            htmlPath: newHtmlPath,
+            assetCount: session.assetCount,
+          }
+        : null,
+    );
+    setSelectedElement(null);
+    setStatus(`Switched to page: ${newHtmlPath.split("/").pop()}`);
+
+    const entry = makeHistoryEntry(newHtml);
+    setHistory([entry]);
+    historyIndexRef.current = 0;
+    setHistoryIndex(0);
+  }, [documentHtml, reloadRuntimeHtml]);
+
+  const handleAssetUpload = useCallback(async (file) => {
+    const session = siteSessionRef.current;
+    if (!session) {
+      // Single HTML file mode: fallback to data URL
+      const reader = new FileReader();
+      return new Promise((resolve, reject) => {
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+    }
+    const relativePath = await session.addAsset(file);
+    // Update package info assetCount since a new asset was added
+    setPackageInfo((prev) =>
+      prev
+        ? {
+            ...prev,
+            assetCount: session.assetCount,
+          }
+        : null,
+    );
+    return relativePath;
+  }, []);
+
   const handleExportHtml = useCallback(async (html = documentHtml) => {
+    const session = siteSessionRef.current;
     try {
-      await downloadHtml(html, fileName);
-      setStatus("Downloaded formatted HTML");
-    } catch {
-      setStatus("Could not download HTML");
+      if (session) {
+        setStatus("Exporting site package...");
+        const formattedHtml = await formatHtml(html);
+        session.updateFile(session.htmlPath, formattedHtml);
+
+        const zipBlob = await session.exportZip();
+        const zipName = `${session.label || "site"}.zip`;
+        const url = URL.createObjectURL(zipBlob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = zipName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+
+        setStatus(`Downloaded site package: ${zipName}`);
+      } else {
+        await downloadHtml(html, fileName);
+        setStatus("Downloaded formatted HTML");
+      }
+    } catch (error) {
+      console.error(error);
+      setStatus("Could not export package");
     }
   }, [documentHtml, fileName]);
 
@@ -332,7 +414,31 @@ export function App() {
           <div className="doc-card">
             <span>Site package</span>
             <strong>{packageInfo.label}</strong>
-          <small>{packageInfo.htmlPath} · {packageInfo.assetCount} resources linked for preview · {packageInfo.exportMode}</small>
+            <small>{packageInfo.htmlPath} · {packageInfo.assetCount} resources linked for preview · {packageInfo.exportMode}</small>
+          </div>
+        ) : null}
+
+        {packageInfo && pages.length > 1 ? (
+          <div className="doc-card">
+            <span>Site Pages</span>
+            <div className="pages-list">
+              {pages.map((pagePath) => {
+                const isActive = pagePath === packageInfo.htmlPath;
+                const name = pagePath.split("/").pop();
+                return (
+                  <button
+                    key={pagePath}
+                    className={`page-item ${isActive ? "active" : ""}`}
+                    onClick={() => void switchPage(pagePath)}
+                    title={pagePath}
+                    type="button"
+                  >
+                    <FileCode2 size={14} />
+                    <span>{name}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         ) : null}
 
@@ -399,7 +505,11 @@ export function App() {
             <PanelRightClose size={17} />
           </button>
         </div>
-        <InspectorPanel selectedElement={selectedElement} updateSelected={updateSelected} />
+        <InspectorPanel
+          selectedElement={selectedElement}
+          updateSelected={updateSelected}
+          onAssetUpload={handleAssetUpload}
+        />
       </aside> : null}
 
       <div className="mobile-actions">
