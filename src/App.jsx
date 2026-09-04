@@ -2,7 +2,6 @@
 // add device viewport simulation, and support a safe no-script mode toggle.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Download,
   FileCode2,
   FolderOpen,
   ImagePlus,
@@ -16,6 +15,7 @@ import {
   Monitor,
   Tablet,
   Smartphone,
+  RotateCw,
   Shield,
   ShieldAlert,
 } from "lucide-react";
@@ -45,7 +45,10 @@ export function App() {
 
   // Antigravity: UI Simulator & Script mode state
   const [viewportWidth, setViewportWidth] = useState("100%");
+  const [customViewportWidth, setCustomViewportWidth] = useState(1024);
+  const [isPortrait, setIsPortrait] = useState(true);
   const [disableUserScripts, setDisableUserScripts] = useState(true);
+  const [isDirty, setIsDirty] = useState(false);
 
   const [documentHtml, setDocumentHtml] = useState(sampleDocument);
   const [runtimeHtml, setRuntimeHtml] = useState(() => injectEditorRuntime(sampleDocument, previewTokenRef.current, true));
@@ -59,11 +62,17 @@ export function App() {
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
 
   const title = useMemo(() => extractTitle(documentHtml), [documentHtml]);
+  const outline = useMemo(() => {
+    const doc = new DOMParser().parseFromString(documentHtml, "text/html");
+    return Array.from(doc.body.querySelectorAll("header, main, section, article, footer")).slice(0, 14).map((node, index) => ({
+      key: `${node.tagName}-${index}`,
+      tag: node.tagName.toLowerCase(),
+      label: node.id ? `#${node.id}` : node.querySelector("h1, h2, h3")?.textContent?.trim().slice(0, 34) || node.classList[0] || node.tagName.toLowerCase(),
+    }));
+  }, [documentHtml]);
 
   // Antigravity: Integrate useHistory hook
   const {
-    history,
-    historyIndex,
     pushHistory,
     handleUndo,
     handleRedo,
@@ -79,6 +88,10 @@ export function App() {
     fileName,
     setStatus
   );
+  const exportDocument = useCallback(async () => {
+    const saved = await handleExportHtml();
+    if (saved) setIsDirty(false);
+  }, [handleExportHtml]);
 
   // Antigravity: Integrate usePreviewSession hook
   const {
@@ -95,6 +108,7 @@ export function App() {
     handleExportHtml,
     disableUserScripts,
     setStatus,
+    setIsDirty,
     htmlRef,
   });
 
@@ -132,6 +146,7 @@ export function App() {
     setPages(siteSession ? siteSession.getHtmlPaths() : []);
     setSelectedElement(null);
     setStatus(siteSession ? `Loaded site package: ${siteSession.assetCount} assets` : `Loaded ${nextFileName}`);
+    setIsDirty(false);
     resetHistory(html);
   }, [reloadRuntimeHtml, resetHistory]);
 
@@ -139,6 +154,27 @@ export function App() {
   const { handleOpenFile, handleOpenDirectory } = useSiteLoader(loadDocument, setStatus);
 
   useEffect(() => () => siteSessionRef.current?.cleanup?.(), []);
+
+  useEffect(() => {
+    const warnBeforeClose = (event) => {
+      if (!isDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeClose);
+    return () => window.removeEventListener("beforeunload", warnBeforeClose);
+  }, [isDirty]);
+
+  useEffect(() => {
+    const handleGlobalSave = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void exportDocument();
+      }
+    };
+    window.addEventListener("keydown", handleGlobalSave);
+    return () => window.removeEventListener("keydown", handleGlobalSave);
+  }, [exportDocument]);
 
   // Antigravity: Reload iframe whenever the script mode is toggled
   useEffect(() => {
@@ -158,6 +194,7 @@ export function App() {
       reloadRuntimeHtml(restored);
       setSelectedElement(null);
       setStatus("Undo");
+      setIsDirty(true);
     }
   };
 
@@ -169,6 +206,7 @@ export function App() {
       reloadRuntimeHtml(restored);
       setSelectedElement(null);
       setStatus("Redo");
+      setIsDirty(true);
     }
   };
 
@@ -256,22 +294,18 @@ export function App() {
 
         <label className="file-drop">
           <FolderOpen size={18} />
-          <span>Open HTML or ZIP</span>
+          <span>Open project</span>
+          <small>HTML or ZIP package</small>
           <input type="file" accept=".html,.htm,.zip,text/html,application/zip" onChange={handleOpenFile} />
         </label>
 
-        <label className="sidebar-action">
+        <label className="sidebar-action secondary-action">
           <FolderOpen size={17} />
           Open site folder
           <input type="file" webkitdirectory="true" directory="" multiple onChange={handleOpenDirectory} />
         </label>
 
-        <button className="sidebar-action" type="button" onClick={() => void handleExportHtml()}>
-          <Download size={17} />
-          Export current HTML
-        </button>
-
-        <button className="sidebar-action" type="button" onClick={() => loadDocument(sampleDocument, "bennu-demo.html")}>
+        <button className="sidebar-action secondary-action" type="button" onClick={() => loadDocument(sampleDocument, "bennu-demo.html")}>
           <FileCode2 size={17} />
           Load demo document
         </button>
@@ -281,6 +315,11 @@ export function App() {
           <strong>{title}</strong>
           <small>{fileName}</small>
         </div>
+
+        <details className="sidebar-disclosure" open>
+          <summary>Document outline <span>{outline.length}</span></summary>
+          <div className="outline-list">{outline.map((item) => <div key={item.key}><code>{item.tag}</code><span>{item.label}</span></div>)}</div>
+        </details>
 
         {packageInfo ? (
           <div className="doc-card">
@@ -314,11 +353,7 @@ export function App() {
           </div>
         ) : null}
 
-        <div className="doc-card">
-          <span>Editing model</span>
-          <strong>Direct DOM preview</strong>
-          <small>Bennu saves the edited DOM as formatted HTML; original source formatting may change.</small>
-        </div>
+        <details className="sidebar-disclosure"><summary>About editing</summary><p>Bennu edits the browser DOM and exports formatted HTML. Original whitespace and attribute order may change.</p></details>
       </aside> : null}
 
       <main className="workspace">
@@ -348,6 +383,7 @@ export function App() {
               className={`icon-button ${viewportWidth === "100%" ? "active" : ""}`}
               onClick={() => setViewportWidth("100%")}
               title="Desktop width"
+              aria-pressed={viewportWidth === "100%"}
             >
               <Monitor size={17} />
             </button>
@@ -356,6 +392,7 @@ export function App() {
               className={`icon-button ${viewportWidth === "768px" ? "active" : ""}`}
               onClick={() => setViewportWidth("768px")}
               title="Tablet width"
+              aria-pressed={viewportWidth === "768px"}
             >
               <Tablet size={17} />
             </button>
@@ -364,14 +401,20 @@ export function App() {
               className={`icon-button ${viewportWidth === "375px" ? "active" : ""}`}
               onClick={() => setViewportWidth("375px")}
               title="Mobile width"
+              aria-pressed={viewportWidth === "375px"}
             >
               <Smartphone size={17} />
             </button>
+            <div className="custom-viewport">
+              <input aria-label="Custom preview width" type="number" min="280" max="1920" value={customViewportWidth} onChange={(event) => setCustomViewportWidth(Math.max(280, Math.min(1920, Number(event.target.value) || 280)))} onBlur={() => setViewportWidth(`${customViewportWidth}px`)} />
+              <span>px</span>
+            </div>
+            <button type="button" className="icon-button" onClick={() => { setIsPortrait((value) => !value); setViewportWidth(`${isPortrait ? 667 : 375}px`); }} title="Rotate device" aria-label="Rotate preview device"><RotateCw size={17} /></button>
           </div>
 
           <div className="topbar-title">
-            <strong>{fileName}</strong>
-            <span>{status}</span>
+            <strong>{fileName}{isDirty ? " •" : ""}</strong>
+            <span className={isDirty ? "dirty-status" : ""}>{isDirty ? "Unsaved changes" : status}</span>
           </div>
 
           <div className="toolbar-group">
@@ -381,6 +424,7 @@ export function App() {
               className={`text-button ${disableUserScripts ? "active" : ""}`}
               onClick={() => setDisableUserScripts((prev) => !prev)}
               title={disableUserScripts ? "Enable user scripts (caution)" : "Disable user scripts (safe)"}
+              aria-pressed={disableUserScripts}
             >
               {disableUserScripts ? <Shield size={16} /> : <ShieldAlert size={16} />}
               {disableUserScripts ? "Safe Mode" : "Scripts Active"}
@@ -391,13 +435,14 @@ export function App() {
               className={`text-button ${isInspectorOpen ? "active" : ""}`}
               onClick={() => setIsInspectorOpen((open) => !open)}
               title={isInspectorOpen ? "Hide inspector" : "Show inspector"}
+              aria-pressed={isInspectorOpen}
             >
               {isInspectorOpen ? <PanelRightClose size={17} /> : <PanelRight size={17} />}
               Inspector
             </button>
-            <button type="button" className="primary-button" onClick={() => void handleExportHtml()}>
+            <button type="button" className="primary-button" onClick={() => void exportDocument()}>
               <Save size={17} />
-              Save HTML
+              Export
             </button>
           </div>
         </header>
@@ -408,7 +453,7 @@ export function App() {
             iframeRef={iframeRef}
             runtimeHtml={runtimeHtml}
             runtimeKey={runtimeKey}
-            viewportWidth={viewportWidth}
+          viewportWidth={viewportWidth}
           />
         </section>
       </main>
@@ -433,11 +478,12 @@ export function App() {
           Open
           <input type="file" accept=".html,.htm,.zip,text/html,application/zip" onChange={handleOpenFile} />
         </label>
-        <button type="button" className="primary-button" onClick={() => void handleExportHtml()}>
+        <button type="button" className="primary-button" onClick={() => void exportDocument()}>
           <Save size={17} />
           Save
         </button>
       </div>
+      <div className="status-announcer" role="status" aria-live="polite">{status}</div>
     </div>
   );
 }

@@ -18,7 +18,7 @@ export function useExportHtml(siteSessionRef, documentHtml, fileName, setStatus)
         // we export the single formatted HTML. Otherwise, we pack it as a ZIP package.
         if (session.label === "single-file" && session.assetCount === 0) {
           await downloadHtml(restoredWithScripts, fileName);
-          setStatus("Downloaded formatted HTML");
+          setStatus("Saved · formatted HTML downloaded");
         } else {
           const zipBlob = await session.exportZip();
           const zipName = session.label === "single-file"
@@ -32,15 +32,17 @@ export function useExportHtml(siteSessionRef, documentHtml, fileName, setStatus)
           anchor.click();
           anchor.remove();
           URL.revokeObjectURL(url);
-          setStatus(`Downloaded site package: ${zipName}`);
+          setStatus(`Saved · ${zipName} downloaded`);
         }
       } else {
         await downloadHtml(restoredWithScripts, fileName);
-        setStatus("Downloaded formatted HTML");
+        setStatus("Saved · formatted HTML downloaded");
       }
+      return true;
     } catch (error) {
       console.error(error);
-      setStatus("Could not export package");
+      setStatus("Export failed · check the document and try again");
+      return false;
     }
   }, [documentHtml, fileName, setStatus, siteSessionRef]);
 

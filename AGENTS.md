@@ -72,6 +72,20 @@ Key files:
 
 ## Recent Changes
 
+Codex editor UX overhaul, 2026-09-04:
+
+- Simplified the primary flow: the left panel now leads with one `Open project` action, keeps folder loading secondary, removes duplicate export controls, and moves technical editing details into a disclosure.
+- Added a lightweight document outline for landmark/container elements.
+- Added selected-element breadcrumbs with direct ancestor selection plus parent, move up/down, duplicate, and remove actions.
+- Reorganized the inspector with progressive disclosure. Content/media/link controls remain prominent; layout, appearance, HTML attributes, and the technical selector are grouped separately.
+- Added four-sided margin/padding controls, property reset buttons, color pickers, and typography controls for weight, line height, and letter spacing.
+- Preview measurements now refresh when the iframe viewport changes instead of remaining stale.
+- Added custom preview width and rotate controls alongside Desktop/Tablet/Mobile presets.
+- Added dirty/saved UI state, a page-close warning for unsaved edits, global Cmd/Ctrl+S export handling, clearer export errors, and an ARIA live status announcer.
+- Added `aria-pressed` state to toggle-style toolbar controls, stronger `:focus-visible` treatment, larger interaction affordances, themed selection, and clearer empty-state guidance.
+- The iframe runtime now supplies ancestor metadata and supports selecting ancestors and moving selected siblings without changing the DOM-source-of-truth architecture.
+- Verification: `npm test`, `npm run test:e2e` (4 specs), and `npm run build` pass. The Impeccable detector was run; its width-transition warning was resolved.
+
 Security:
 
 - Removed `allow-same-origin` from the preview iframe sandbox.

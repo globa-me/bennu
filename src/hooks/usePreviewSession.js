@@ -15,6 +15,7 @@ export function usePreviewSession({
   handleExportHtml,
   disableUserScripts,
   setStatus,
+  setIsDirty,
   htmlRef,
 }) {
   const restoreFromPreview = useCallback((html) => {
@@ -56,6 +57,10 @@ export function usePreviewSession({
       if (restoredHtml) pushHistory(restoredHtml);
     }
 
+    if (message.type === "measure") {
+      setSelectedElement(normalizeElement(message.element || null));
+    }
+
     if (message.type === "change") {
       if (restoredHtml) {
         htmlRef.current = restoredHtml;
@@ -63,6 +68,7 @@ export function usePreviewSession({
       }
       setSelectedElement(normalizeElement(message.element || null));
       setStatus("Edited");
+      setIsDirty(true);
       if (restoredHtml) pushHistory(restoredHtml);
     }
 
@@ -79,6 +85,7 @@ export function usePreviewSession({
     pushHistory,
     handleExportHtml,
     setStatus,
+    setIsDirty,
     htmlRef,
   ]);
 
@@ -95,7 +102,7 @@ export function usePreviewSession({
   }, [iframeRef, previewTokenRef]);
 
   const updateSelected = useCallback((action, payload = {}) => {
-    if (!selectedElement?.id) return;
+    if (!selectedElement?.id && !payload.id) return;
     const nextPayload = { ...payload };
     if (
       action === "set-attr" &&
@@ -104,7 +111,7 @@ export function usePreviewSession({
     ) {
       nextPayload.value = siteSessionRef.current?.previewUrlFor(payload.value) || payload.value;
     }
-    postToPreview({ action, id: selectedElement.id, ...nextPayload });
+    postToPreview({ action, id: payload.id || selectedElement.id, ...nextPayload });
   }, [postToPreview, selectedElement?.id, siteSessionRef]);
 
   return {

@@ -122,6 +122,16 @@ export function injectEditorRuntime(html, sessionToken = "", disableUserScripts 
       const rect = node.getBoundingClientRect();
       const textTags = new Set(["A", "BUTTON", "H1", "H2", "H3", "H4", "H5", "H6", "P", "SPAN", "LI", "BLOCKQUOTE", "FIGCAPTION", "LABEL", "STRONG", "EM"]);
       const canEditText = textTags.has(node.tagName) || node.children.length === 0;
+      const ancestors = [];
+      let ancestor = node;
+      while (ancestor && ancestor.nodeType === 1 && !ignored.has(ancestor.tagName)) {
+        ancestors.unshift({
+          id: ensureId(ancestor),
+          tagName: ancestor.tagName.toLowerCase(),
+          label: ancestor.id ? "#" + ancestor.id : ancestor.classList.length ? "." + ancestor.classList[0] : ancestor.tagName.toLowerCase()
+        });
+        ancestor = ancestor.parentElement;
+      }
       return {
         id: ensureId(node),
         tagName: node.tagName.toLowerCase(),
@@ -150,6 +160,14 @@ export function injectEditorRuntime(html, sessionToken = "", disableUserScripts 
 	        backgroundColor: node.style.backgroundColor || styles.backgroundColor,
 	        color: node.style.color || styles.color,
 	        fontSize: node.style.fontSize || styles.fontSize,
+	        fontWeight: node.style.fontWeight || styles.fontWeight,
+	        lineHeight: node.style.lineHeight || styles.lineHeight,
+	        letterSpacing: node.style.letterSpacing || styles.letterSpacing,
+	        marginRight: node.style.marginRight || styles.marginRight,
+	        marginLeft: node.style.marginLeft || styles.marginLeft,
+	        paddingRight: node.style.paddingRight || styles.paddingRight,
+	        paddingLeft: node.style.paddingLeft || styles.paddingLeft,
+	        ancestors,
 	        rect: { width: Math.round(rect.width), height: Math.round(rect.height) }
 	      };
 	    }
@@ -224,6 +242,10 @@ export function injectEditorRuntime(html, sessionToken = "", disableUserScripts 
       if (selected) post("change", { element: selectedPayload(selected), html: cleanClone() });
     }, true);
 
+    window.addEventListener("resize", () => {
+      if (selected) post("measure", { element: selectedPayload(selected) });
+    });
+
     window.addEventListener("keydown", (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -239,6 +261,16 @@ export function injectEditorRuntime(html, sessionToken = "", disableUserScripts 
 	      const node = document.querySelector("[data-bennu-id='" + CSS.escape(message.id || "") + "']");
 	      if (!node) return;
 
+      if (message.action === "select-node") {
+        select(node);
+        return;
+      }
+      if (message.action === "select-parent") {
+        select(node.parentElement);
+        return;
+      }
+      if (message.action === "move-up" && node.previousElementSibling) node.parentElement.insertBefore(node, node.previousElementSibling);
+      if (message.action === "move-down" && node.nextElementSibling) node.parentElement.insertBefore(node.nextElementSibling, node);
       if (message.action === "set-text") node.innerText = message.value || "";
       if (message.action === "set-html") node.innerHTML = message.value || "";
       if (message.action === "set-attr") {
