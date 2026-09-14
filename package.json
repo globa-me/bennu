@@ -1,7 +1,7 @@
 {
   "name": "bennu",
   "version": "1.0.0",
-  "description": "A lightweight live HTML document editor.",
+  "description": "A local-first visual HTML editor that runs entirely in your browser.",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -17,8 +17,16 @@
     "vite",
     "react"
   ],
-  "author": "",
+  "author": "Gennady Zakharov",
   "license": "ISC",
+  "homepage": "https://bennu.zakharov.asia/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/globa-me/bennu.git"
+  },
+  "bugs": {
+    "url": "https://github.com/globa-me/bennu/issues"
+  },
   "dependencies": {
     "@vitejs/plugin-react": "^6.0.2",
     "jszip": "^3.10.1",

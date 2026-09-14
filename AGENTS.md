@@ -8,7 +8,8 @@ Bennu is a static React/Vite app for editing HTML visually in an iframe. It is i
 
 Production is Cloudflare Pages:
 
-- Production URL: `https://bennu.pages.dev/`
+- Primary production URL: `https://bennu.zakharov.asia/`
+- Cloudflare Pages fallback URL: `https://bennu.pages.dev/`
 - Cloudflare Pages project: `bennu`
 - Deploy mode: Direct Upload with Wrangler, not Git integration
 - Config: `wrangler.jsonc`
@@ -58,19 +59,45 @@ npx wrangler pages deploy dist --project-name bennu
 
 Key files:
 
+- `PRODUCT.md`: durable product truth for audience, local-first positioning, bilingual onboarding, privacy boundaries, and product principles.
 - `src/App.jsx`: top-level layout, component orchestration, styling, and hook integration.
 - `src/hooks/useHistory.js`: custom hook managing the document's undo/redo history stacks.
 - `src/hooks/useExportHtml.js`: custom hook wrapping Prettier formatting and smart file/ZIP package download exports.
 - `src/hooks/useSiteLoader.js`: custom hook managing folder, ZIP, and virtual single-file loading sessions.
 - `src/hooks/usePreviewSession.js`: custom hook handling iframe `postMessage` boundary communications and script toggle status.
+- `src/lib/i18n.js`: complete Russian/English interface dictionaries and translation helpers.
+- `src/lib/preferences.js`: versioned and validated `localStorage` preferences.
+- `src/lib/localWorkspace.js`: IndexedDB project recovery and browser storage helpers.
 - `src/lib/htmlSession.js`: HTML runtime injection, iframe editor script, HTML formatting/download helpers.
 - `src/lib/sitePackage.js`: ZIP/folder loading, path normalization, asset URL rewriting to `blob:`, restore from `blob:` URLs to relative paths.
 - `src/components/PreviewFrame.jsx`: sandboxed editable iframe wrapper supporting responsive widths simulator.
 - `src/components/InspectorPanel.jsx`: selected element inspector.
 - `src/lib/sitePackage.test.js`: Vitest coverage for ZIP/folder path resolving and restore behavior.
 - `src/styles.css`: main app styling.
+- `public/sw.js`, `public/manifest.webmanifest`, `public/_headers`: offline shell, install metadata, and Cloudflare Pages security headers.
 
 ## Recent Changes
+
+Public GitHub release, 2026-09-14:
+
+- Prepared the project for its public `globa-me/bennu` repository with a product-focused README, current editor screenshot, ISC license, contributing guide, and structured bug/feature issue forms.
+- Added package metadata linking the source repository, issue tracker, public homepage, and creator.
+- Added GitHub Actions CI for unit/component tests, production builds, and Playwright browser tests on pushes and pull requests.
+- GitHub repository metadata uses the production homepage, a concise local-first description, and topics covering the editor, privacy, PWA, React, Vite, and Cloudflare Pages.
+
+Public local-first onboarding and privacy release, 2026-09-09:
+
+- Added Russian and English localization for the application, inspector, statuses, onboarding, contextual help, and settings. The first-run language choice controls the whole app and persists locally.
+- Added a first-run introduction, a replayable four-step guided tour, contextual question-mark help, and a Help & Settings center.
+- Added an unobtrusive creator section for Gennady Zakharov with links to `zakharov.asia`, Instagram, LinkedIn, Facebook, and Telegram.
+- Added versioned UI preferences in `localStorage` plus IndexedDB recovery of the most recent local project, including package files stored as `Blob` values. Export remains the durable save operation.
+- Added Private Preview as a separate session-only control from Safe Script Mode. Private Preview reversibly blocks external resources, CSS imports, forms, redirects, embedded documents, and network connections while preserving original values for export.
+- Tightened the preview iframe to a minimal `allow-scripts` sandbox and added `referrerPolicy="no-referrer"`.
+- Added ZIP safety limits: 2,000 files, 25 MiB per file, and 200 MiB total uncompressed content.
+- Added a web app manifest, service worker for the application shell, offline UI state, and Cloudflare Pages security headers. User project data is never stored in the service-worker cache.
+- Replaced the demo's remote image with a self-contained data image so Private Preview is complete without network access; the demo copy now follows the selected interface language.
+- Added product truth to `PRODUCT.md` and corrected README documentation for full ZIP export.
+- Verification: 27 unit/component tests, 9 Playwright E2E tests, production build, and the Impeccable detector pass after resolving its progress-width transition warning.
 
 Codex editor UX overhaul, 2026-09-04:
 
@@ -159,12 +186,15 @@ Antigravity refactoring and features note, 2026-06-14:
 
 ## Last Known Verification
 
-As of 2026-06-14:
+As of 2026-09-09:
 
-- `npm test` passes.
-- `npm run test:e2e` passes (all 4 specs passing).
+- `npm test` passes (27 unit/component tests).
+- `npm run test:e2e` passes (all 9 specs passing).
 - `npm run build` passes.
-- `https://bennu.pages.dev/` returns `HTTP 200` through Cloudflare.
+- Local Playwright visual checks cover the intro, guided tour, editor, Help & Settings, creator links, privacy controls, persistence, and the mobile layout.
+- The Impeccable finish review returned `SHIP` after the mobile drawer/bottom-sheet and desktop open-project fixes.
+- `https://bennu.zakharov.asia/` is active on Cloudflare Pages with valid HTTPS and returns `HTTP 200`; the fallback `https://bennu.pages.dev/` remains available.
+- A production Playwright smoke verified the Russian intro and interface, demo onboarding, Help & Settings creator block, and the `https://zakharov.asia/ru/` link. Referenced JS assets return `HTTP 200`.
 
 ## Known Limitations
 
@@ -173,20 +203,20 @@ As of 2026-06-14:
 
 ## Recommended Next Work
 
-Priority 1: Add parent/child selection controls and breadcrumbs.
+Priority 1: Add an explicit local-project library.
 
-- Show breadcrumbs for the selected element's DOM path (e.g. `div > main > section > h1`).
-- Allow selecting parent elements directly from breadcrumbs or parent selector button to ease layout editing.
+- Let users name, reopen, duplicate, and remove several browser-local projects instead of exposing only the latest recovery snapshot.
+- Keep IndexedDB as the storage boundary and make export/import the cross-device workflow.
 
-Priority 2: Add production smoke checks.
+Priority 2: Extend package-flow coverage.
 
-- Verify `https://bennu.pages.dev/` title.
-- Verify referenced JS/CSS assets return 200.
-- Optionally run a lightweight headless interaction smoke.
+- Add Playwright coverage for folder loading, multi-page switching, asset replacement, and ZIP packaging.
+- Add a production smoke that opens the demo, edits text, and verifies an HTML download from the custom hostname.
 
-Priority 3: Extend E2E test coverage.
+Priority 3: Run lightweight user testing.
 
-- Add playwright coverage for folder loading, multi-page page switching, and asset upload/ZIP packaging flows.
+- Observe first-time users completing open, select, edit, and export without prompting.
+- Refine tour and contextual-help copy from the points where users hesitate.
 
 ## Design Direction
 

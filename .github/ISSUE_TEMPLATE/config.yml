@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Try Bennu
+    url: https://bennu.zakharov.asia/
+    about: Open the current production version before filing an issue.

@@ -1,0 +1,17 @@
+{
+  "name": "Bennu — Visual HTML editor",
+  "short_name": "Bennu",
+  "description": "Edit HTML visually in your browser. Your project stays on your device.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#eef2f1",
+  "theme_color": "#0f766e",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

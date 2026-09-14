@@ -1,55 +1,92 @@
-# Bennu
+<div align="center">
+  <img src="src/assets/bennu-mark.svg" width="88" alt="Bennu logo" />
 
-Bennu is a lightweight live HTML document editor inspired by Phoenix Code. It focuses on one primary workflow: open an HTML file, edit the rendered page directly, adjust selected elements in an inspector, and export the changed HTML.
+  # Bennu
 
-## Run
+  **A local-first visual HTML editor that runs entirely in your browser.**
+
+  Open an HTML file, ZIP package, or site folder. Edit the rendered page directly,
+  tune elements in the inspector, and export standard HTML or ZIP files.
+
+  [Open Bennu](https://bennu.zakharov.asia/) · [Report a bug](https://github.com/globa-me/bennu/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/globa-me/bennu/issues/new?template=feature_request.yml)
+
+  [![Live demo](https://img.shields.io/badge/live-bennu.zakharov.asia-0f766e?style=flat-square)](https://bennu.zakharov.asia/)
+  [![CI](https://img.shields.io/github/actions/workflow/status/globa-me/bennu/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/globa-me/bennu/actions/workflows/ci.yml)
+  [![License: ISC](https://img.shields.io/badge/license-ISC-334155?style=flat-square)](LICENSE)
+  [![React 19](https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white)](https://react.dev/)
+  [![Vite 8](https://img.shields.io/badge/Vite-8-646cff?style=flat-square&logo=vite&logoColor=white)](https://vite.dev/)
+</div>
+
+![Bennu editor with a selected heading and the visual inspector open](docs/bennu-editor.png)
+
+## Why Bennu
+
+Bennu is for people who need to update an existing HTML page or small static site without switching constantly between source code and a browser. There is no account, project backend, or proprietary output format: projects stay on the device, and export produces files that work without Bennu.
+
+## Highlights
+
+- Open `.html` / `.htm` files, ZIP packages, or complete site folders.
+- Edit text directly in a sandboxed live preview.
+- Select elements and adjust content, links, images, spacing, dimensions, typography, colors, classes, and visibility.
+- Navigate a document outline and selected-element breadcrumbs.
+- Move, duplicate, hide, or remove elements with undo and redo.
+- Preview desktop, tablet, mobile, rotated, or custom viewport widths.
+- Switch the complete interface and onboarding between English and Russian.
+- Recover the latest local project from IndexedDB after a reload.
+- Export formatted HTML or a complete ZIP package with updated local assets.
+- Work offline after the application shell has loaded once.
+
+## Local-first by design
+
+Bennu has no project upload API, account system, analytics, or server-side project storage. Files and edits are processed in the browser. Browser storage helps recover unfinished work; an exported HTML or ZIP file remains the durable copy you own.
+
+Every session starts with two separate safety boundaries:
+
+- **Private Preview** blocks external resources, CSS imports, forms, redirects, embedded documents, and network connections while preserving original values for export.
+- **Safe Script Mode** disables project scripts and inline event handlers in the preview and restores them during export.
+
+The editable iframe uses an opaque origin, a minimal `allow-scripts` sandbox, a per-preview session token, and host-side `contentWindow` checks. ZIP imports are limited to 2,000 files, 25 MiB per file, and 200 MiB total uncompressed content.
+
+## Quick start
+
+Requirements: Node.js 20.19+, 22.13+, or 24+.
 
 ```bash
-npm install
+git clone https://github.com/globa-me/bennu.git
+cd bennu
+npm ci
 npm run dev
 ```
 
-Open `http://localhost:5173/`.
+Open [http://localhost:5173](http://localhost:5173).
 
-## What Works
+## Commands
 
-- Open `.html` / `.htm` files from disk.
-- Open a full site as `.zip` or a selected folder, including relative CSS, images, fonts, scripts, and `url(...)` references inside CSS.
-- Edit text directly inside the rendered preview.
-- Select images, links, text, and layout blocks in the preview.
-- Change text, image source, local image replacement, alt text, links, spacing, width, alignment, object-fit, class, and visibility from the inspector.
-- Export the current edited HTML.
-- Undo and redo recent document states.
-- Collapse the left file panel and right inspector to give the preview more space.
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the local Vite development server |
+| `npm test` | Run unit and component tests with Vitest |
+| `npm run test:e2e` | Run Playwright browser tests |
+| `npm run build` | Create the production build in `dist/` |
+| `npm run preview` | Preview the production build locally |
+| `npm run deploy` | Build and upload to the configured Cloudflare Pages project |
 
-## Saving Model
+## How it works
 
-Bennu uses the edited browser DOM as the source of truth and exports it as formatted HTML. This keeps the visual editor simple and predictable, but it means original source formatting, whitespace, and attribute ordering may change after export.
+Bennu treats the edited browser DOM as the source of truth. Imported package resources are mapped to local `blob:` URLs for the preview, then restored to relative paths during export. This makes the editor predictable and keeps it independent of a backend, but original whitespace, formatting, and attribute ordering may change.
 
-When a full site package is opened from a ZIP or folder, Bennu currently exports the edited HTML document only. Package-wide ZIP export is planned for a later iteration.
+The application is a static React/Vite site. Core responsibilities are separated into hooks for history, export, package loading, and iframe communication, with package/path handling in `src/lib` and the editor runtime injected into the preview document.
 
-## Deploy
+For deeper product decisions and constraints, see [PRODUCT.md](PRODUCT.md).
 
-Bennu currently runs as a static client-side app on Cloudflare Pages:
+## Contributing
 
-- production URL: `https://bennu.pages.dev/`
-- Cloudflare Pages project: `bennu`
-- deploy mode: Direct Upload through Wrangler, not Git integration
+Bug reports, feature ideas, and focused pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
-It does not need a persistent backend server for editing, ZIP/folder loading, preview rendering, or exporting HTML.
+## Deployment
 
-Deploy from this directory:
+The public app runs on Cloudflare Pages at [bennu.zakharov.asia](https://bennu.zakharov.asia/), with [bennu.pages.dev](https://bennu.pages.dev/) as the fallback address. The repository does not require a backend for editing, package loading, preview rendering, or exporting.
 
-```bash
-npm run deploy
-```
+## License
 
-The deploy script runs `npm run build` and uploads `dist` to the `bennu` Pages project.
-
-The app runs in the user's browser. Site packages are read through browser file APIs, resources are mapped to local `blob:` URLs for preview, and exported HTML is downloaded back to the user.
-
-If local AI returns later, an online deployment will need a local bridge app or extension to talk to LM Studio/Ollama on the user's machine. Direct calls from a hosted page to `http://localhost:1234` are not reliable because of browser security restrictions.
-
-## Notes
-
-The preview runs the imported HTML inside an editable iframe and injects a small runtime script for selection and live editing. Treat unknown HTML files as untrusted content.
+Copyright © 2026 [Gennady Zakharov](https://zakharov.asia/). Released under the [ISC License](LICENSE).

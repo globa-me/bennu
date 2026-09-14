@@ -103,7 +103,7 @@ export const sampleDocument = `<!doctype html>
           <p>Click text, images, buttons, or sections in the preview. Change content and layout without jumping between source code and a browser.</p>
           <a class="button" href="#features">Start editing</a>
         </div>
-        <img class="photo" alt="Workspace desk" src="https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=80">
+        <img class="photo" alt="Abstract Bennu workspace" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 900'%3E%3Crect width='1200' height='900' fill='%23dcece8'/%3E%3Ccircle cx='875' cy='235' r='168' fill='%23f2c84b'/%3E%3Cpath d='M0 670 Q250 470 520 650 T1200 560 V900 H0Z' fill='%230f766e'/%3E%3Cpath d='M170 650 Q410 270 760 600 Q535 490 310 720Z' fill='%2317201d'/%3E%3Ctext x='82' y='138' font-family='Arial,sans-serif' font-size='54' font-weight='700' fill='%2317201d'%3EBennu workspace%3C/text%3E%3C/svg%3E">
       </section>
 
       <section class="features" id="features">
@@ -123,3 +123,34 @@ export const sampleDocument = `<!doctype html>
     </main>
   </body>
 </html>`;
+
+export function getSampleDocument(language = "en") {
+  if (language !== "ru") return sampleDocument;
+  return sampleDocument
+    .replace("Bennu Demo Document", "Демонстрационная страница Bennu")
+    .replace(
+      "Edit this page directly in Bennu.",
+      "Редактируйте эту страницу прямо в Bennu.",
+    )
+    .replace(
+      "Click text, images, buttons, or sections in the preview. Change content and layout without jumping between source code and a browser.",
+      "Нажимайте на текст, изображения, кнопки и блоки. Меняйте содержимое и макет, не переключаясь между кодом и браузером.",
+    )
+    .replace("Start editing", "Начать редактирование")
+    .replace("Abstract Bennu workspace", "Рабочее пространство Bennu")
+    .replace("Live text", "Живой текст")
+    .replace(
+      "Type on the page and export the changed HTML when the document is ready.",
+      "Редактируйте текст на странице и экспортируйте готовый HTML.",
+    )
+    .replace(">Images<", ">Изображения<")
+    .replace(
+      "Select an image, paste a new source, or load a local replacement as a data URL.",
+      "Выберите изображение, укажите новый адрес или загрузите локальную замену.",
+    )
+    .replace(">Layout<", ">Макет<")
+    .replace(
+      "Tune spacing, width, alignment, and visibility from the inspector.",
+      "Настраивайте отступы, ширину, выравнивание и видимость через инспектор.",
+    );
+}

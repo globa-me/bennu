@@ -2,10 +2,161 @@ const BENNU_SCRIPT_ID = "bennu-runtime-editor";
 const SELECTED_ATTR = "data-bennu-selected";
 const EDITABLE_ATTR = "data-bennu-editable";
 const HOVERED_ATTR = "data-bennu-hovered";
+const PRIVATE_RUNTIME_ATTR = "data-bennu-private-runtime";
+const PRIVATE_ORIGINAL_PREFIX = "data-bennu-private-original-";
+const PRIVATE_HAD_PREFIX = "data-bennu-private-had-";
 
-export function injectEditorRuntime(html, sessionToken = "", disableUserScripts = false) {
+const PRIVATE_URL_ATTRS = [
+  ["base", "href"],
+  ["link", "href"],
+  ["script", "src"],
+  ["img", "src"],
+  ["source", "src"],
+  ["video", "src"],
+  ["video", "poster"],
+  ["audio", "src"],
+  ["input", "src"],
+  ["image", "href"],
+  ["image", "xlink:href"],
+  ["use", "href"],
+  ["use", "xlink:href"],
+];
+
+function privateMarkerSuffix(attributeName) {
+  return attributeName.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+}
+
+function rememberAndReplaceAttribute(node, attributeName, replacement = null) {
+  const suffix = privateMarkerSuffix(attributeName);
+  if (node.hasAttribute(`${PRIVATE_HAD_PREFIX}${suffix}`)) return;
+  node.setAttribute(
+    `${PRIVATE_HAD_PREFIX}${suffix}`,
+    node.hasAttribute(attributeName) ? "true" : "false",
+  );
+  node.setAttribute(
+    `${PRIVATE_ORIGINAL_PREFIX}${suffix}`,
+    node.getAttribute(attributeName) || "",
+  );
+  if (replacement == null) node.removeAttribute(attributeName);
+  else node.setAttribute(attributeName, replacement);
+}
+
+function isNetworkUrl(value = "") {
+  return /^(?:https?:)?\/\//i.test(value.trim());
+}
+
+function neutralizeExternalCss(css = "") {
+  return css
+    .replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (match, quote, url) =>
+      isNetworkUrl(url) ? 'url("data:,")' : match,
+    )
+    .replace(
+      /@import\s+(?:url\(\s*)?(['"])([^'"]+)\1\s*\)?[^;]*;?/gi,
+      (match, quote, url) => (isNetworkUrl(url) ? "" : match),
+    );
+}
+
+function applyPrivatePreview(doc) {
+  PRIVATE_URL_ATTRS.forEach(([selector, attributeName]) => {
+    const attributeSelector = attributeName.replace(":", "\\:");
+    doc
+      .querySelectorAll(`${selector}[${attributeSelector}]`)
+      .forEach((node) => {
+        const value = node.getAttribute(attributeName) || "";
+        if (isNetworkUrl(value))
+          rememberAndReplaceAttribute(node, attributeName);
+      });
+  });
+
+  doc.querySelectorAll("[srcset]").forEach((node) => {
+    const candidates = (node.getAttribute("srcset") || "").split(",");
+    if (
+      candidates.some((candidate) =>
+        isNetworkUrl(candidate.trim().split(/\s+/)[0] || ""),
+      )
+    ) {
+      rememberAndReplaceAttribute(node, "srcset");
+    }
+  });
+
+  doc.querySelectorAll("[style]").forEach((node) => {
+    const original = node.getAttribute("style") || "";
+    const safe = neutralizeExternalCss(original);
+    if (safe !== original) rememberAndReplaceAttribute(node, "style", safe);
+  });
+
+  doc.querySelectorAll("style").forEach((node) => {
+    const original = node.textContent || "";
+    const safe = neutralizeExternalCss(original);
+    if (safe !== original) {
+      node.setAttribute(`${PRIVATE_HAD_PREFIX}text`, "true");
+      node.setAttribute(`${PRIVATE_ORIGINAL_PREFIX}text`, original);
+      node.textContent = safe;
+    }
+  });
+
+  doc.querySelectorAll('meta[http-equiv="refresh" i]').forEach((node) => {
+    rememberAndReplaceAttribute(node, "content");
+  });
+
+  doc
+    .querySelectorAll("form")
+    .forEach((node) => rememberAndReplaceAttribute(node, "action"));
+  doc
+    .querySelectorAll("[formaction]")
+    .forEach((node) => rememberAndReplaceAttribute(node, "formaction"));
+  doc.querySelectorAll("iframe").forEach((node) => {
+    rememberAndReplaceAttribute(node, "src", "about:blank");
+    rememberAndReplaceAttribute(node, "srcdoc");
+  });
+  doc
+    .querySelectorAll("object")
+    .forEach((node) => rememberAndReplaceAttribute(node, "data"));
+  doc
+    .querySelectorAll("embed")
+    .forEach((node) => rememberAndReplaceAttribute(node, "src"));
+
+  const policy = doc.createElement("meta");
+  policy.setAttribute("http-equiv", "Content-Security-Policy");
+  policy.setAttribute(PRIVATE_RUNTIME_ATTR, "true");
+  policy.setAttribute(
+    "content",
+    "default-src 'none'; img-src data: blob:; media-src data: blob:; font-src data: blob:; style-src 'unsafe-inline' blob:; script-src 'unsafe-inline' blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'",
+  );
+  doc.head.prepend(policy);
+}
+
+function restorePrivatePreviewDocument(doc) {
+  doc
+    .querySelectorAll(`[${PRIVATE_RUNTIME_ATTR}]`)
+    .forEach((node) => node.remove());
+  doc.querySelectorAll("*").forEach((node) => {
+    Array.from(node.attributes).forEach((attribute) => {
+      if (!attribute.name.startsWith(PRIVATE_HAD_PREFIX)) return;
+      const suffix = attribute.name.slice(PRIVATE_HAD_PREFIX.length);
+      const originalName = suffix === "xlink-href" ? "xlink:href" : suffix;
+      const originalValue =
+        node.getAttribute(`${PRIVATE_ORIGINAL_PREFIX}${suffix}`) || "";
+      if (suffix === "text") node.textContent = originalValue;
+      else if (attribute.value === "true")
+        node.setAttribute(originalName, originalValue);
+      else node.removeAttribute(originalName);
+      node.removeAttribute(attribute.name);
+      node.removeAttribute(`${PRIVATE_ORIGINAL_PREFIX}${suffix}`);
+    });
+  });
+}
+
+export function injectEditorRuntime(
+  html,
+  sessionToken = "",
+  disableUserScripts = false,
+  privatePreview = true,
+) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html || "", "text/html");
+
+  restorePrivatePreviewDocument(doc);
 
   if (!doc.querySelector("title")) {
     const title = doc.createElement("title");
@@ -13,14 +164,20 @@ export function injectEditorRuntime(html, sessionToken = "", disableUserScripts 
     doc.head.appendChild(title);
   }
 
-  doc.querySelectorAll(`#${BENNU_SCRIPT_ID}, style[data-bennu-runtime]`).forEach((node) => node.remove());
-  doc.querySelectorAll(`[${SELECTED_ATTR}], [${EDITABLE_ATTR}], [${HOVERED_ATTR}]`).forEach((node) => {
-    node.removeAttribute(SELECTED_ATTR);
-    node.removeAttribute(EDITABLE_ATTR);
-    node.removeAttribute(HOVERED_ATTR);
-    node.removeAttribute("contenteditable");
-    node.removeAttribute("spellcheck");
-  });
+  doc
+    .querySelectorAll(`#${BENNU_SCRIPT_ID}, style[data-bennu-runtime]`)
+    .forEach((node) => node.remove());
+  doc
+    .querySelectorAll(
+      `[${SELECTED_ATTR}], [${EDITABLE_ATTR}], [${HOVERED_ATTR}]`,
+    )
+    .forEach((node) => {
+      node.removeAttribute(SELECTED_ATTR);
+      node.removeAttribute(EDITABLE_ATTR);
+      node.removeAttribute(HOVERED_ATTR);
+      node.removeAttribute("contenteditable");
+      node.removeAttribute("spellcheck");
+    });
 
   // Antigravity: Disable user scripts inside the iframe to prevent loops/hijacking if safe mode is enabled
   if (disableUserScripts) {
@@ -41,7 +198,10 @@ export function injectEditorRuntime(html, sessionToken = "", disableUserScripts 
       for (let j = 0; j < el.attributes.length; j++) {
         const attr = el.attributes[j];
         if (attr.name.startsWith("on")) {
-          attrsToAdd.push({ name: `data-bennu-orig-${attr.name}`, value: attr.value });
+          attrsToAdd.push({
+            name: `data-bennu-orig-${attr.name}`,
+            value: attr.value,
+          });
           attrsToRemove.push(attr.name);
         }
       }
@@ -49,6 +209,8 @@ export function injectEditorRuntime(html, sessionToken = "", disableUserScripts 
       attrsToAdd.forEach(({ name, value }) => el.setAttribute(name, value));
     }
   }
+
+  if (privatePreview) applyPrivatePreview(doc);
 
   const style = doc.createElement("style");
   style.setAttribute("data-bennu-runtime", "true");
@@ -175,6 +337,20 @@ export function injectEditorRuntime(html, sessionToken = "", disableUserScripts 
     function cleanClone() {
       const clone = document.documentElement.cloneNode(true);
       clone.querySelectorAll("#${BENNU_SCRIPT_ID}, style[data-bennu-runtime]").forEach((node) => node.remove());
+	      clone.querySelectorAll("[${PRIVATE_RUNTIME_ATTR}]").forEach((node) => node.remove());
+	      clone.querySelectorAll("*").forEach((node) => {
+	        Array.from(node.attributes).forEach((attribute) => {
+	          if (!attribute.name.startsWith("${PRIVATE_HAD_PREFIX}")) return;
+	          const suffix = attribute.name.slice("${PRIVATE_HAD_PREFIX}".length);
+	          const originalName = suffix === "xlink-href" ? "xlink:href" : suffix;
+	          const originalValue = node.getAttribute("${PRIVATE_ORIGINAL_PREFIX}" + suffix) || "";
+	          if (suffix === "text") node.textContent = originalValue;
+	          else if (attribute.value === "true") node.setAttribute(originalName, originalValue);
+	          else node.removeAttribute(originalName);
+	          node.removeAttribute(attribute.name);
+	          node.removeAttribute("${PRIVATE_ORIGINAL_PREFIX}" + suffix);
+	        });
+	      });
 	      clone.querySelectorAll("[data-bennu-id], [${SELECTED_ATTR}], [${EDITABLE_ATTR}], [${HOVERED_ATTR}]").forEach((node) => {
 	        node.removeAttribute("data-bennu-id");
 	        node.removeAttribute("${SELECTED_ATTR}");
@@ -307,7 +483,9 @@ export function injectEditorRuntime(html, sessionToken = "", disableUserScripts 
 export function extractTitle(html) {
   try {
     const doc = new DOMParser().parseFromString(html, "text/html");
-    return doc.querySelector("title")?.textContent?.trim() || "Untitled document";
+    return (
+      doc.querySelector("title")?.textContent?.trim() || "Untitled document"
+    );
   } catch {
     return "Untitled document";
   }
@@ -366,6 +544,7 @@ export function restoreUserScripts(html) {
   if (!html) return html;
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, "text/html");
+  restorePrivatePreviewDocument(doc);
 
   // Restore script tags
   doc.querySelectorAll('script[type="text/bennu-disabled"]').forEach((el) => {

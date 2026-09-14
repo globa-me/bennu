@@ -157,4 +157,49 @@ describe("site package sessions", () => {
     expect(zipBlob).toBeInstanceOf(Blob);
     expect(zipBlob.size).toBeGreaterThan(0);
   });
+
+  test("rejects ZIP packages with too many files before creating a session", async () => {
+    const zip = new JSZip();
+    zip.file("index.html", "<h1>Hello</h1>");
+    zip.file("one.txt", "1");
+    zip.file("two.txt", "2");
+    const blob = await zip.generateAsync({ type: "blob" });
+
+    await expect(
+      createSiteSessionFromZip(new File([blob], "many.zip"), {
+        maxFiles: 2,
+        maxFileBytes: 1024,
+        maxTotalBytes: 2048,
+      }),
+    ).rejects.toThrow("ZIP contains too many files (3). The limit is 2.");
+  });
+
+  test("rejects an oversized ZIP entry with a clear per-file error", async () => {
+    const zip = new JSZip();
+    zip.file("index.html", "x".repeat(64));
+    const blob = await zip.generateAsync({ type: "blob" });
+
+    await expect(
+      createSiteSessionFromZip(new File([blob], "large.zip"), {
+        maxFiles: 10,
+        maxFileBytes: 32,
+        maxTotalBytes: 1024,
+      }),
+    ).rejects.toThrow('ZIP file "index.html" is too large');
+  });
+
+  test("rejects a ZIP whose total uncompressed size exceeds the limit", async () => {
+    const zip = new JSZip();
+    zip.file("index.html", "x".repeat(30));
+    zip.file("asset.txt", "y".repeat(30));
+    const blob = await zip.generateAsync({ type: "blob" });
+
+    await expect(
+      createSiteSessionFromZip(new File([blob], "total.zip"), {
+        maxFiles: 10,
+        maxFileBytes: 64,
+        maxTotalBytes: 50,
+      }),
+    ).rejects.toThrow("total limit");
+  });
 });

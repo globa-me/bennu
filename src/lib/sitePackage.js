@@ -1,5 +1,11 @@
 import JSZip from "jszip";
 
+export const ZIP_LIMITS = Object.freeze({
+  maxFiles: 2000,
+  maxFileBytes: 25 * 1024 * 1024,
+  maxTotalBytes: 200 * 1024 * 1024,
+});
+
 const URL_ATTRS = [
   ["link", "href"],
   ["script", "src"],
@@ -103,12 +109,15 @@ function commonRoot(paths) {
   const [first] = paths;
   const firstSegment = first.split("/")[0];
   if (!firstSegment || first === firstSegment) return "";
-  return paths.every((path) => path.startsWith(`${firstSegment}/`)) ? firstSegment : "";
+  return paths.every((path) => path.startsWith(`${firstSegment}/`))
+    ? firstSegment
+    : "";
 }
 
 function chooseHtmlPath(paths) {
   const htmlPaths = paths.filter((path) => /\.html?$/i.test(path));
-  if (!htmlPaths.length) throw new Error("No HTML file found in the site package.");
+  if (!htmlPaths.length)
+    throw new Error("No HTML file found in the site package.");
   return (
     htmlPaths.find((path) => /(^|\/)index\.html?$/i.test(path)) ||
     htmlPaths.sort((a, b) => a.length - b.length)[0]
@@ -140,7 +149,11 @@ function relativeFrom(fromFile, targetFile) {
   const fromParts = dirname(fromFile).split("/").filter(Boolean);
   const targetParts = normalizePath(targetFile).split("/").filter(Boolean);
 
-  while (fromParts.length && targetParts.length && fromParts[0] === targetParts[0]) {
+  while (
+    fromParts.length &&
+    targetParts.length &&
+    fromParts[0] === targetParts[0]
+  ) {
     fromParts.shift();
     targetParts.shift();
   }
@@ -166,21 +179,64 @@ function transformCssUrls(css, fromPath, resolveUrl) {
       if (isExternalUrl(url)) return match;
       return `url("${resolveUrl(url, fromPath)}")`;
     })
-    .replace(/@import\s+(?:url\(\s*)?(['"])([^'"]+)\1\s*\)?/gi, (match, quote, url) => {
-      if (isExternalUrl(url)) return match;
-      return `@import url("${resolveUrl(url, fromPath)}")`;
-    });
+    .replace(
+      /@import\s+(?:url\(\s*)?(['"])([^'"]+)\1\s*\)?/gi,
+      (match, quote, url) => {
+        if (isExternalUrl(url)) return match;
+        return `@import url("${resolveUrl(url, fromPath)}")`;
+      },
+    );
 }
 
-async function filesFromZip(file) {
+function formatMegabytes(bytes) {
+  return `${Math.ceil(bytes / (1024 * 1024))} MB`;
+}
+
+async function filesFromZip(file, limits = ZIP_LIMITS) {
   const zip = await JSZip.loadAsync(file);
   const files = new Map();
+  const entries = Object.values(zip.files).filter(
+    (entry) => !entry.dir && !entry.name.startsWith("__MACOSX/"),
+  );
 
+  if (entries.length > limits.maxFiles) {
+    throw new Error(
+      `ZIP contains too many files (${entries.length}). The limit is ${limits.maxFiles}.`,
+    );
+  }
+
+  let declaredTotal = 0;
+  entries.forEach((entry) => {
+    const declaredSize = Number(entry?._data?.uncompressedSize || 0);
+    if (declaredSize > limits.maxFileBytes) {
+      throw new Error(
+        `ZIP file "${entry.name}" is too large (${formatMegabytes(declaredSize)}). The per-file limit is ${formatMegabytes(limits.maxFileBytes)}.`,
+      );
+    }
+    declaredTotal += declaredSize;
+  });
+  if (declaredTotal > limits.maxTotalBytes) {
+    throw new Error(
+      `ZIP expands to ${formatMegabytes(declaredTotal)}, exceeding the ${formatMegabytes(limits.maxTotalBytes)} total limit.`,
+    );
+  }
+
+  let actualTotal = 0;
   await Promise.all(
-    Object.values(zip.files).map(async (entry) => {
-      if (entry.dir || entry.name.startsWith("__MACOSX/")) return;
+    entries.map(async (entry) => {
       const path = normalizePath(entry.name);
       const blob = await entry.async("blob");
+      if (blob.size > limits.maxFileBytes) {
+        throw new Error(
+          `ZIP file "${entry.name}" is too large (${formatMegabytes(blob.size)}). The per-file limit is ${formatMegabytes(limits.maxFileBytes)}.`,
+        );
+      }
+      actualTotal += blob.size;
+      if (actualTotal > limits.maxTotalBytes) {
+        throw new Error(
+          `ZIP expands beyond the ${formatMegabytes(limits.maxTotalBytes)} total uncompressed limit.`,
+        );
+      }
       files.set(path, blob);
     }),
   );
@@ -201,8 +257,8 @@ async function readBlobText(blob) {
   return blob.text();
 }
 
-export async function createSiteSessionFromZip(file) {
-  const files = await filesFromZip(file);
+export async function createSiteSessionFromZip(file, limits = ZIP_LIMITS) {
+  const files = await filesFromZip(file, limits);
   return createSiteSession(files, file.name);
 }
 
@@ -224,7 +280,9 @@ export async function createSiteSession(files, label = "site") {
 
   const makeObjectUrl = (path, blob) => {
     if (objectUrls.has(path)) return objectUrls.get(path);
-    const typedBlob = blob.type ? blob : new Blob([blob], { type: mimeForPath(path) });
+    const typedBlob = blob.type
+      ? blob
+      : new Blob([blob], { type: mimeForPath(path) });
     const url = URL.createObjectURL(typedBlob);
     objectUrls.set(path, url);
     blobToOriginal.set(url, path);
@@ -237,8 +295,10 @@ export async function createSiteSession(files, label = "site") {
     const resolvedPath = resolvePath(path, fromPath, files, root);
     if (!resolvedPath) return value;
 
-    if (extname(resolvedPath) === ".css" && objectUrls.has(resolvedPath)) return `${objectUrls.get(resolvedPath)}${suffix}`;
-    if (extname(resolvedPath) === ".css") return `${makeObjectUrl(resolvedPath, files.get(resolvedPath))}${suffix}`;
+    if (extname(resolvedPath) === ".css" && objectUrls.has(resolvedPath))
+      return `${objectUrls.get(resolvedPath)}${suffix}`;
+    if (extname(resolvedPath) === ".css")
+      return `${makeObjectUrl(resolvedPath, files.get(resolvedPath))}${suffix}`;
 
     return `${makeObjectUrl(resolvedPath, files.get(resolvedPath))}${suffix}`;
   };
@@ -274,7 +334,9 @@ export async function createSiteSession(files, label = "site") {
 
     const promise = (async () => {
       const transformed = await transformCssFile(path);
-      const url = URL.createObjectURL(new Blob([transformed], { type: "text/css" }));
+      const url = URL.createObjectURL(
+        new Blob([transformed], { type: "text/css" }),
+      );
       objectUrls.set(path, url);
       blobToOriginal.set(url, path);
       return url;
@@ -294,23 +356,43 @@ export async function createSiteSession(files, label = "site") {
     const doc = parser.parseFromString(sourceHtml || "", "text/html");
 
     URL_ATTRS.forEach(([selector, attr]) => {
-      doc.querySelectorAll(`${selector}[${CSS.escape(attr)}]`).forEach((node) => {
-        const current = node.getAttribute(attr);
-        if (!current) return;
-        node.setAttribute(attr, resolveUrl(current, htmlPath));
-      });
+      doc
+        .querySelectorAll(`${selector}[${CSS.escape(attr)}]`)
+        .forEach((node) => {
+          const current = node.getAttribute(attr);
+          if (!current) return;
+          node.setAttribute(attr, resolveUrl(current, htmlPath));
+        });
     });
 
     doc.querySelectorAll("[srcset]").forEach((node) => {
-      node.setAttribute("srcset", transformSrcset(node.getAttribute("srcset") || "", htmlPath, resolveUrl));
+      node.setAttribute(
+        "srcset",
+        transformSrcset(
+          node.getAttribute("srcset") || "",
+          htmlPath,
+          resolveUrl,
+        ),
+      );
     });
 
     doc.querySelectorAll("[style]").forEach((node) => {
-      node.setAttribute("style", transformCssUrls(node.getAttribute("style") || "", htmlPath, resolveUrl));
+      node.setAttribute(
+        "style",
+        transformCssUrls(
+          node.getAttribute("style") || "",
+          htmlPath,
+          resolveUrl,
+        ),
+      );
     });
 
     doc.querySelectorAll("style").forEach((node) => {
-      node.textContent = transformCssUrls(node.textContent || "", htmlPath, resolveUrl);
+      node.textContent = transformCssUrls(
+        node.textContent || "",
+        htmlPath,
+        resolveUrl,
+      );
     });
 
     return "<!doctype html>\n" + doc.documentElement.outerHTML;
@@ -334,8 +416,12 @@ export async function createSiteSession(files, label = "site") {
   };
 
   const getHtmlPaths = () => {
-    return Array.from(files.keys()).filter((path) => /\.html?$/i.test(path)).sort();
+    return Array.from(files.keys())
+      .filter((path) => /\.html?$/i.test(path))
+      .sort();
   };
+
+  const getFiles = () => new Map(files);
 
   const updateFile = (path, content) => {
     const blob = new Blob([content], { type: "text/html;charset=utf-8" });
@@ -376,20 +462,29 @@ export async function createSiteSession(files, label = "site") {
 
   return {
     html,
-    get htmlPath() { return htmlPath; },
+    get htmlPath() {
+      return htmlPath;
+    },
     label,
     root,
-    get assetCount() { return Math.max(0, files.size - 1); },
+    get assetCount() {
+      return Math.max(0, files.size - 1);
+    },
     exportPackage: {
       mode: "Full package export ready",
-      get htmlPath() { return htmlPath; },
-      get assetPaths() { return Array.from(files.keys()).filter((path) => path !== htmlPath); },
+      get htmlPath() {
+        return htmlPath;
+      },
+      get assetPaths() {
+        return Array.from(files.keys()).filter((path) => path !== htmlPath);
+      },
     },
     render,
     restore,
     previewUrlFor,
     cleanup,
     getHtmlPaths,
+    getFiles,
     updateFile,
     getFileText,
     switchHtmlPath,
@@ -399,5 +494,8 @@ export async function createSiteSession(files, label = "site") {
 }
 
 export function isZipFile(file) {
-  return file?.name?.toLowerCase().endsWith(".zip") || file?.type === "application/zip";
+  return (
+    file?.name?.toLowerCase().endsWith(".zip") ||
+    file?.type === "application/zip"
+  );
 }
