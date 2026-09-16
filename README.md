@@ -15,6 +15,13 @@
   [![License: ISC](https://img.shields.io/badge/license-ISC-334155?style=flat-square)](LICENSE)
   [![React 19](https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white)](https://react.dev/)
   [![Vite 8](https://img.shields.io/badge/Vite-8-646cff?style=flat-square&logo=vite&logoColor=white)](https://vite.dev/)
+
+  **Support independent GZ Apps development**
+
+  Get ready-to-run builds, updates, and member posts while helping me improve this project.
+
+  [![Support on Patreon](https://img.shields.io/badge/Support_on-Patreon-FF424D?style=for-the-badge&logo=patreon&logoColor=white)](https://www.patreon.com/c/globa_me)
+  [![Support on Boosty](https://img.shields.io/badge/Support_on-Boosty-F15F2C?style=for-the-badge)](https://boosty.to/globa_me)
 </div>
 
 ![Bennu editor with a selected heading and the visual inspector open](docs/bennu-editor.png)
